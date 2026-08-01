@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CategoryGroup {
+  income
+  fixed
+  variable
+  savings
+}
+
+enum InvestmentTxType {
+  BUY
+  SELL
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  currency     String   @default("EUR")
+  createdAt    DateTime @default(now())
+
+  categories        CategoryConfig[]
+  entries           Entry[]
+  monthSummaries    MonthSummary[]
+  investmentTx      InvestmentTransaction[]
+}
+
+// Configurable list of categories per group (income / fixed / variable / savings).
+// Seeded with the user's existing Excel categories, editable from /settings.
+model CategoryConfig {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group     CategoryGroup
+  name      String
+  order     Int           @default(0)
+  archived  Boolean       @default(false)
+  createdAt DateTime      @default(now())
+
+  entries Entry[]
+
+  @@unique([userId, group, name])
+  @@index([userId, group])
+}
+
+// One row per (month, category) amount entered by the user.
+model Entry {
+  id         String        @id @default(cuid())
+  userId     String
+  user       User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year       Int
+  month      Int // 1-12
+  group      CategoryGroup
+  categoryId String
+  category   CategoryConfig @relation(fields: [categoryId], references: [id])
+  amount     Float
+  note       String?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  investmentTx InvestmentTransaction[]
+
+  @@unique([userId, year, month, categoryId])
+  @@index([userId, year, month])
+}
+
+// Starting balance entered manually each month; everything else (totals, ending
+// balance) is derived from Entry rows at query time.
+model MonthSummary {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year            Int
+  month           Int
+  startingBalance Float    @default(0)
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, year, month])
+  @@index([userId, year])
+}
+
+// Stock portfolio transactions. Can optionally be linked to the Entry created
+// under the "Investissement" savings category on the monthly input page, so a
+// saved amount is traceable to the actual position it bought.
+model InvestmentTransaction {
+  id           String            @id @default(cuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ticker       String
+  name         String?
+  type         InvestmentTxType
+  quantity     Float
+  pricePerUnit Float
+  fees         Float             @default(0)
+  currency     String            @default("EUR")
+  date         DateTime
+  note         String?
+  linkedEntryId String?
+  linkedEntry  Entry?            @relation(fields: [linkedEntryId], references: [id], onDelete: SetNull)
+  createdAt    DateTime          @default(now())
+
+  @@index([userId, ticker])
+  @@index([userId, date])
+}
