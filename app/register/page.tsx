@@ -18,26 +18,30 @@ export default function RegisterPage() {
     setError(null);
     setLoading(true);
 
-    const res = await fetch("/api/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password }),
-    });
+    try {
+      const res = await fetch("/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
+      });
 
-    if (!res.ok) {
-      const data = await res.json();
-      setError(data.error ?? "Erreur lors de l'inscription");
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "Erreur lors de l'inscription");
+        return;
+      }
+
+      const signInRes = await signIn("credentials", { email, password, redirect: false });
+      if (signInRes?.error) {
+        router.push("/login");
+        return;
+      }
+      router.push("/dashboard");
+    } catch (err) {
+      setError("Erreur serveur — réessaie dans un instant");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const signInRes = await signIn("credentials", { email, password, redirect: false });
-    setLoading(false);
-    if (signInRes?.error) {
-      router.push("/login");
-      return;
-    }
-    router.push("/dashboard");
   }
 
   return (

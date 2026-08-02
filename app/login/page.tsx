@@ -16,13 +16,18 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const res = await signIn("credentials", { email, password, redirect: false });
-    setLoading(false);
-    if (res?.error) {
-      setError("Email ou mot de passe incorrect");
-      return;
+    try {
+      const res = await signIn("credentials", { email, password, redirect: false });
+      if (res?.error) {
+        setError("Email ou mot de passe incorrect");
+        return;
+      }
+      router.push("/dashboard");
+    } catch (err) {
+      setError("Erreur serveur — réessaie dans un instant");
+    } finally {
+      setLoading(false);
     }
-    router.push("/dashboard");
   }
 
   return (
