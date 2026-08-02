@@ -19,27 +19,36 @@ export const GROUP_COLORS: Record<Group, string> = {
 
 export const CATEGORIES: Record<Group, { category: string; subCategories?: string[] }[]> = {
   revenus: [
-    { category: "Salaire" },
-    { category: "Freelance / à côté" },
-    { category: "Autres revenus" },
+    { category: "Salary" },
+    { category: "Coaching" },
+    { category: "Referee" },
+    { category: "Other income" },
   ],
   fixes: [
-    { category: "Loyer / Crédit" },
-    { category: "Assurances" },
-    { category: "Abonnements" },
-    { category: "Téléphone / Internet" },
-    { category: "Transport" },
+    { category: "Rent" },
+    { category: "Electricity" },
+    { category: "Gas" },
+    { category: "Water" },
+    { category: "Internet" },
+    { category: "Gym" },
+    { category: "Netflix" },
+    { category: "Phone" },
+    { category: "Music" },
+    { category: "Mutual" },
+    { category: "Car payment" },
+    { category: "Car insurance" },
+    { category: "Parking" },
+    { category: "Creche" },
   ],
   variables: [
-    { category: "Alimentation" },
-    { category: "Sorties / Loisirs" },
-    { category: "Shopping" },
-    { category: "Santé" },
-    { category: "Divers" },
+    { category: "Food" },
+    { category: "Car fuel" },
+    { category: "Clothes" },
+    { category: "Other expenses" },
   ],
   epargne: [
-    { category: "Épargne de précaution" },
-    { category: "Investissement" }, // catégorie spéciale, liée aux transactions boursières
+    { category: "Reserve build" },
+    { category: "Investment" }, // catégorie spéciale, liée aux transactions boursières
   ],
 };
 

@@ -70,7 +70,7 @@ export async function POST(req: Request) {
     let transactionId: string | undefined;
 
     // Catégorie "Investissement" -> crée/complète une transaction liée
-    if (line.category === "Investissement" && line.investment) {
+    if (line.category === "Investment" && line.investment) {
       const tx = await prisma.transaction.create({
         data: {
           userId,

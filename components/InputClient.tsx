@@ -29,6 +29,12 @@ export default function InputClient() {
       .then((data) => setAllEntries((prev) => mergeByYear(prev, year, data)));
   }, [year]);
 
+  function refetchAllEntries() {
+    fetch(`/api/entries`)
+      .then((r) => r.json())
+      .then((data) => setAllEntries(data));
+  }
+
   useEffect(() => {
     // pré-remplit avec le mois précédent (même année ou année-1 si janvier)
     const prevYear = month === 1 ? year - 1 : year;
@@ -61,7 +67,7 @@ export default function InputClient() {
       category: c.category,
       subCategory: null,
       amount: amounts[c.category] ?? 0,
-      ...(c.category === "Investissement" && investTicker && investQty && investPrice
+      ...(c.category === "Investment" && investTicker && investQty && investPrice
         ? {
             investment: {
               ticker: investTicker,
@@ -121,7 +127,7 @@ export default function InputClient() {
           Vue détaillée (poste par poste)
         </label>
         <div className="ml-auto">
-          <ExcelImport year={year} onImported={() => setAmounts({ ...amounts })} />
+          <ExcelImport onImported={refetchAllEntries} />
         </div>
       </div>
 
@@ -158,7 +164,7 @@ export default function InputClient() {
                 ))}
               </div>
 
-              {g === "epargne" && (amounts["Investissement"] ?? 0) > 0 && (
+              {g === "epargne" && (amounts["Investment"] ?? 0) > 0 && (
                 <div className="mt-3 p-4 bg-purple-50 rounded-lg space-y-2">
                   <p className="text-sm text-purple-800">
                     Préciser le titre acheté pour tracer ce montant dans Investissements :

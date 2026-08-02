@@ -2,11 +2,61 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import * as XLSX from "xlsx";
-import { ALL_CATEGORIES } from "@/lib/categories";
+import { ALL_CATEGORIES, Group } from "@/lib/categories";
 
-// POST /api/import-excel : reçoit un fichier .xlsx (multipart/form-data),
-// tente de mapper automatiquement les colonnes vers les catégories connues,
-// et renvoie un aperçu (rien n'est écrit en base ici — confirmation faite via /api/entries).
+// Ce parseur est conçu pour un format "budget annuel" où :
+// - les catégories sont en LIGNES (colonne A), regroupées sous des lignes de section
+//   en gras (Income / Fixed expenses / Variable / Savings)
+// - les mois sont en COLONNES, avec l'année indiquée au-dessus (souvent une cellule
+//   fusionnée, donc seule la première colonne du bloc de l'année porte la valeur)
+// - la section "Account Split" (soldes de comptes) est ignorée : ce n'est pas une
+//   catégorie de budget
+
+const MONTH_NAMES: Record<string, number> = {
+  janvier: 1, january: 1, jan: 1,
+  février: 2, fevrier: 2, february: 2, feb: 2, februar: 2,
+  mars: 3, march: 3, maart: 3,
+  avril: 4, april: 4,
+  mai: 5, may: 5, mei: 5,
+  juin: 6, june: 6, juni: 6,
+  juillet: 7, july: 7, juli: 7,
+  août: 8, aout: 8, august: 8, augustus: 8,
+  septembre: 9, september: 9, sept: 9,
+  octobre: 10, october: 10, oktober: 10, okt: 10,
+  novembre: 11, november: 11,
+  décembre: 12, decembre: 12, december: 12, dezember: 12,
+};
+
+// Sections reconnues comme en-têtes de groupe (pas des catégories elles-mêmes)
+const GROUP_HEADERS: Record<string, Group> = {
+  income: "revenus", revenus: "revenus", revenu: "revenus",
+  "fixed expenses": "fixes", "dépenses fixes": "fixes", "depenses fixes": "fixes", fixed: "fixes",
+  variable: "variables", "dépenses variables": "variables", "depenses variables": "variables", variables: "variables",
+  savings: "epargne", épargne: "epargne", epargne: "epargne",
+};
+
+// Sections à ignorer complètement (pas des catégories de budget)
+const IGNORED_SECTIONS = new Set(["account split", "répartition des comptes"]);
+
+function normalize(s: any) {
+  return s?.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() ?? "";
+}
+
+// Table de correspondance nom Excel -> catégorie connue (avec désambiguïsation de "Other")
+function resolveCategory(rawLabel: string, currentGroup: Group | null): { category: string; group: Group } | null {
+  const norm = normalize(rawLabel);
+  if (!norm) return null;
+
+  if (norm === "other" && currentGroup) {
+    if (currentGroup === "revenus") return { category: "Other income", group: "revenus" };
+    if (currentGroup === "variables") return { category: "Other expenses", group: "variables" };
+  }
+
+  const match = ALL_CATEGORIES.find((c) => normalize(c.category) === norm);
+  if (match) return { category: match.category, group: match.group };
+  return null;
+}
+
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
@@ -18,44 +68,103 @@ export async function POST(req: Request) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: null });
+  const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
 
-  // Normalisation simple pour matcher les libellés de colonnes aux catégories connues
-  const normalize = (s: string) =>
-    s
-      .toString()
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .trim();
+  if (rows.length < 2) {
+    return NextResponse.json({ error: "Feuille vide ou format non reconnu" }, { status: 400 });
+  }
 
-  const knownByName = new Map(ALL_CATEGORIES.map((c) => [normalize(c.category), c]));
-
-  const monthColumn =
-    Object.keys(rows[0] ?? {}).find((k) => /mois|month|date/i.test(k)) ?? null;
-
-  const preview = rows.map((row) => {
-    const mapped: { column: string; matchedCategory: string | null; group: string | null; value: any }[] = [];
-    for (const [col, value] of Object.entries(row)) {
-      if (col === monthColumn) continue;
-      const match = knownByName.get(normalize(col));
-      mapped.push({
-        column: col,
-        matchedCategory: match?.category ?? null,
-        group: match?.group ?? null,
-        value,
-      });
+  // 1. Trouver la ligne d'en-tête des mois : la première ligne contenant au moins
+  //    un nom de mois reconnu (peu importe la langue).
+  let headerRowIndex = -1;
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    if (rows[i].some((cell) => MONTH_NAMES[normalize(cell)])) {
+      headerRowIndex = i;
+      break;
     }
-    return {
-      monthLabel: monthColumn ? row[monthColumn] : null,
-      lines: mapped,
-    };
+  }
+  if (headerRowIndex === -1) {
+    return NextResponse.json({ error: "Impossible de trouver la ligne des mois (Janvier, Février...)" }, { status: 400 });
+  }
+
+  // 2. Trouver l'année pour chaque colonne : on regarde la/les ligne(s) au-dessus de
+  //    l'en-tête des mois, et on propage la dernière valeur numérique à 4 chiffres
+  //    rencontrée de gauche à droite (gère les cellules fusionnées).
+  const yearRow = headerRowIndex > 0 ? rows[headerRowIndex - 1] : [];
+  const columnYears: (number | null)[] = [];
+  let lastYear: number | null = null;
+  for (let col = 0; col < rows[headerRowIndex].length; col++) {
+    const raw = yearRow[col];
+    const num = Number(raw);
+    if (raw != null && num >= 1900 && num <= 2100) lastYear = num;
+    columnYears[col] = lastYear;
+  }
+  // Si aucune année trouvée du tout, on utilise l'année en cours par défaut
+  const fallbackYear = new Date().getFullYear();
+
+  // 3. Associer chaque colonne pertinente à { year, month }
+  const monthColumns: { col: number; year: number; month: number }[] = [];
+  rows[headerRowIndex].forEach((cell, col) => {
+    const month = MONTH_NAMES[normalize(cell)];
+    if (month) {
+      monthColumns.push({ col, year: columnYears[col] ?? fallbackYear, month });
+    }
   });
 
+  // 4. Parcourir les lignes suivantes : détecter les sections, ignorer "Account Split",
+  //    et pour chaque ligne de catégorie reconnue, récupérer les valeurs par colonne.
+  type ParsedLine = { year: number; month: number; group: Group; category: string; amount: number };
+  const parsedLines: ParsedLine[] = [];
+  const unrecognizedLabels = new Set<string>();
+
+  let currentGroup: Group | null = null;
+  let ignoring = false;
+
+  for (let r = headerRowIndex + 1; r < rows.length; r++) {
+    const row = rows[r];
+    const label = row[0];
+    const normLabel = normalize(label);
+    if (!normLabel) continue;
+
+    if (IGNORED_SECTIONS.has(normLabel)) {
+      ignoring = true;
+      continue;
+    }
+    if (GROUP_HEADERS[normLabel]) {
+      currentGroup = GROUP_HEADERS[normLabel];
+      ignoring = false;
+      continue;
+    }
+    if (ignoring) continue;
+
+    const resolved = resolveCategory(label, currentGroup);
+    if (!resolved) {
+      unrecognizedLabels.add(label.toString());
+      continue;
+    }
+
+    for (const { col, year, month } of monthColumns) {
+      const raw = row[col];
+      if (raw === null || raw === undefined || raw === "") continue;
+      const amount = Number(raw);
+      if (Number.isNaN(amount)) continue;
+      parsedLines.push({ year, month, group: resolved.group, category: resolved.category, amount });
+    }
+  }
+
+  // 5. Regrouper par (année, mois) pour l'aperçu et la confirmation
+  const byMonth = new Map<string, { year: number; month: number; lines: ParsedLine[] }>();
+  for (const line of parsedLines) {
+    const key = `${line.year}-${line.month}`;
+    if (!byMonth.has(key)) byMonth.set(key, { year: line.year, month: line.month, lines: [] });
+    byMonth.get(key)!.lines.push(line);
+  }
+  const months = Array.from(byMonth.values()).sort((a, b) => a.year - b.year || a.month - b.month);
+
   return NextResponse.json({
-    rowCount: rows.length,
-    monthColumn,
-    unmatchedColumns: preview[0]?.lines.filter((l) => !l.matchedCategory).map((l) => l.column) ?? [],
-    preview,
+    monthCount: months.length,
+    lineCount: parsedLines.length,
+    unrecognizedLabels: Array.from(unrecognizedLabels),
+    months,
   });
 }
