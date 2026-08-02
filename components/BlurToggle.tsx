@@ -37,7 +37,8 @@ export function Money({ value, className = "" }: { value: number; className?: st
   const formatted = new Intl.NumberFormat("fr-FR", {
     style: "currency",
     currency: "EUR",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
   return <span className={`money ${className}`}>{formatted}</span>;
 }

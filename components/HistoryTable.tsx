@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
-import { ALL_CATEGORIES, MONTH_LABELS } from "@/lib/categories";
+import { useMemo, useState } from "react";
+import { MONTH_LABELS } from "@/lib/categories";
 import { Money } from "@/components/BlurToggle";
 
-type Entry = { year: number; month: number; category: string; amount: number };
+type Entry = { year: number; month: number; group: string; category: string; amount: number };
+type EditFn = (year: number, month: number, group: string, category: string, amount: number) => Promise<void> | void;
 
-export default function HistoryTable({ entries }: { entries: Entry[] }) {
+export default function HistoryTable({ entries, onEdit }: { entries: Entry[]; onEdit?: EditFn }) {
   // Construit la liste triée des mois présents
   const months = useMemo(() => {
     const set = new Set(entries.map((e) => `${e.year}-${e.month}`));
@@ -18,14 +19,27 @@ export default function HistoryTable({ entries }: { entries: Entry[] }) {
       .sort((a, b) => a.year - b.year || a.month - b.month);
   }, [entries]);
 
-  // grid[category][monthIndex] = amount
+  // Catégories dérivées des entrées elles-mêmes (garde l'historique même si une
+  // catégorie a depuis été renommée ou supprimée), groupées et triées par groupe
+  const categories = useMemo(() => {
+    const order = ["revenus", "fixes", "variables", "epargne"];
+    const seen = new Map<string, { group: string; category: string }>();
+    for (const e of entries) {
+      const key = `${e.group}:${e.category}`;
+      if (!seen.has(key)) seen.set(key, { group: e.group, category: e.category });
+    }
+    return Array.from(seen.values()).sort(
+      (a, b) => order.indexOf(a.group) - order.indexOf(b.group) || a.category.localeCompare(b.category)
+    );
+  }, [entries]);
+
+  // grid[group:category][monthKey] = amount
   const grid = useMemo(() => {
     const map: Record<string, Record<string, number>> = {};
-    for (const c of ALL_CATEGORIES) map[c.category] = {};
     for (const e of entries) {
-      const key = `${e.year}-${e.month}`;
-      if (!map[e.category]) map[e.category] = {};
-      map[e.category][key] = e.amount;
+      const key = `${e.group}:${e.category}`;
+      if (!map[key]) map[key] = {};
+      map[key][`${e.year}-${e.month}`] = e.amount;
     }
     return map;
   }, [entries]);
@@ -48,35 +62,74 @@ export default function HistoryTable({ entries }: { entries: Entry[] }) {
           </tr>
         </thead>
         <tbody>
-          {ALL_CATEGORIES.map(({ category }) => {
-            const row = grid[category] ?? {};
-            // calcule les "runs" de valeurs identiques consécutives pour fusion visuelle
+          {categories.map(({ group, category }) => {
+            const key = `${group}:${category}`;
+            const row = grid[key] ?? {};
             const cells = months.map((m) => row[`${m.year}-${m.month}`] ?? null);
-            const spans: { value: number | null; span: number }[] = [];
-            for (let i = 0; i < cells.length; i++) {
-              if (i > 0 && cells[i] === cells[i - 1]) {
-                spans[spans.length - 1].span++;
-              } else {
-                spans.push({ value: cells[i], span: 1 });
-              }
-            }
             return (
-              <tr key={category} className="border-b border-gray-100">
+              <tr key={key} className="border-b border-gray-100">
                 <td className="px-4 py-2 sticky left-0 bg-white text-gray-700">{category}</td>
-                {spans.map((s, idx) => (
-                  <td
-                    key={idx}
-                    colSpan={s.span}
-                    className="text-right px-4 py-2 text-gray-800"
-                  >
-                    {s.value !== null ? <Money value={s.value} /> : <span className="text-gray-300">—</span>}
-                  </td>
-                ))}
+                {months.map((m, i) => {
+                  // fusion purement visuelle : pas de bordure gauche si la valeur
+                  // est identique au mois précédent (mais chaque cellule reste éditable)
+                  const sameAsPrev = i > 0 && cells[i] === cells[i - 1] && cells[i] !== null;
+                  return (
+                    <td key={`${m.year}-${m.month}`} className={`text-right p-0 ${sameAsPrev ? "border-l-0" : "border-l border-gray-100"}`}>
+                      <EditableCell
+                        value={cells[i]}
+                        editable={!!onEdit}
+                        onSave={(newVal) => onEdit?.(m.year, m.month, group, category, newVal)}
+                      />
+                    </td>
+                  );
+                })}
               </tr>
             );
           })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function EditableCell({ value, editable, onSave }: { value: number | null; editable: boolean; onSave: (v: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value?.toString() ?? "0");
+
+  if (!editable) {
+    return (
+      <div className="px-4 py-2 text-gray-800">
+        {value !== null ? <Money value={value} /> : <span className="text-gray-300">—</span>}
+      </div>
+    );
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="number"
+        step="0.01"
+        autoFocus
+        defaultValue={value ?? 0}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          const num = Math.round(Number(draft) * 100) / 100;
+          if (!Number.isNaN(num) && num !== value) onSave(num);
+        }}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        className="w-full text-right px-4 py-2 border-2 border-accent outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      onClick={() => { setDraft(value?.toString() ?? "0"); setEditing(true); }}
+      className="w-full text-right px-4 py-2 text-gray-800 hover:bg-blue-50 cursor-text"
+      title="Cliquer pour modifier"
+    >
+      {value !== null ? <Money value={value} /> : <span className="text-gray-300">—</span>}
+    </button>
   );
 }
