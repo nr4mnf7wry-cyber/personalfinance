@@ -1,0 +1,68 @@
+// Schéma Prisma — Vercel Postgres (Neon)
+// Après config de DATABASE_URL : npx prisma db push
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String        @id @default(cuid())
+  name          String?
+  email         String        @unique
+  passwordHash  String
+  createdAt     DateTime      @default(now())
+
+  entries       MonthEntry[]
+  transactions  Transaction[]
+}
+
+// Une ligne = un poste (catégorie/sous-catégorie) pour un mois donné
+model MonthEntry {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  year         Int
+  month        Int      // 1-12
+
+  group        String   // "revenus" | "fixes" | "variables" | "epargne"
+  category     String   // ex: "Salaire", "Loyer", "Investissement", ...
+  subCategory  String?  // optionnel, vue détaillée
+  amount       Float
+
+  // si la ligne "Investissement" génère une transaction liée
+  transactionId String?  @unique
+  transaction   Transaction? @relation(fields: [transactionId], references: [id])
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, year, month, category, subCategory])
+  @@index([userId, year, month])
+}
+
+model Transaction {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date        DateTime
+  ticker      String
+  label       String?    // nom complet du titre
+  quantity    Float
+  unitPrice   Float      // prix moyen d'achat pour cette transaction
+  amount      Float      // quantity * unitPrice (peut différer si frais)
+  sector      String?
+
+  monthEntry  MonthEntry?
+
+  createdAt   DateTime   @default(now())
+
+  @@index([userId, ticker])
+}
