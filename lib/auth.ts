@@ -18,15 +18,27 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email.toLowerCase().trim() },
-        });
-        if (!user) return null;
+        // Compte démo — ne touche jamais la base de données.
+        // Permet de voir l'interface même si la DB n'est pas encore opérationnelle.
+        if (credentials.email === "demo@demo.com" && credentials.password === "demo1234") {
+          return { id: "demo-user", email: "demo@demo.com", name: "Démo" };
+        }
 
-        const valid = await bcrypt.compare(credentials.password, user.passwordHash);
-        if (!valid) return null;
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email.toLowerCase().trim() },
+          });
+          if (!user) return null;
 
-        return { id: user.id, email: user.email, name: user.name ?? undefined };
+          const valid = await bcrypt.compare(credentials.password, user.passwordHash);
+          if (!valid) return null;
+
+          return { id: user.id, email: user.email, name: user.name ?? undefined };
+        } catch (err) {
+          // Base de données indisponible — évite un crash 500 silencieux côté client
+          console.error("Erreur DB pendant l'authentification:", err);
+          return null;
+        }
       },
     }),
   ],

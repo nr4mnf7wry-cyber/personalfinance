@@ -8,12 +8,16 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
 
-  const transactions = await prisma.transaction.findMany({
-    where: { userId: (session.user as any).id },
-    orderBy: { date: "desc" },
-  });
-
-  return NextResponse.json(transactions);
+  try {
+    const transactions = await prisma.transaction.findMany({
+      where: { userId: (session.user as any).id },
+      orderBy: { date: "desc" },
+    });
+    return NextResponse.json(transactions);
+  } catch (err) {
+    console.error("Erreur DB /api/investments GET:", err);
+    return NextResponse.json([]);
+  }
 }
 
 const schema = z.object({

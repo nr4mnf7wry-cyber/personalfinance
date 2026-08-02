@@ -14,16 +14,20 @@ export async function GET(req: Request) {
   const year = searchParams.get("year");
   const month = searchParams.get("month");
 
-  const entries = await prisma.monthEntry.findMany({
-    where: {
-      userId: (session.user as any).id,
-      ...(year ? { year: Number(year) } : {}),
-      ...(month ? { month: Number(month) } : {}),
-    },
-    orderBy: [{ year: "asc" }, { month: "asc" }],
-  });
-
-  return NextResponse.json(entries);
+  try {
+    const entries = await prisma.monthEntry.findMany({
+      where: {
+        userId: (session.user as any).id,
+        ...(year ? { year: Number(year) } : {}),
+        ...(month ? { month: Number(month) } : {}),
+      },
+      orderBy: [{ year: "asc" }, { month: "asc" }],
+    });
+    return NextResponse.json(entries);
+  } catch (err) {
+    console.error("Erreur DB /api/entries GET:", err);
+    return NextResponse.json([]);
+  }
 }
 
 const lineSchema = z.object({
