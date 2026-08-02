@@ -1,14 +1,12 @@
-// Schéma Prisma — Vercel Postgres (Neon)
-// Après config de DATABASE_URL : npx prisma db push
+// Schéma Prisma — Prisma Postgres (via l'intégration Vercel)
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
