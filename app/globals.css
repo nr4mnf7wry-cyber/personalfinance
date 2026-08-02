@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --border: #e5e7eb;
+  --text: #12161c;
+  --text-muted: #6b7280;
+  --accent: #1971c2;
+  --green: #2f9e44;
+  --red: #e03131;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Toggle "flouter les chiffres" : appliqué sur un ancêtre .blur-numbers,
+   tout élément marqué .money est flouté */
+.blur-numbers .money {
+  filter: blur(6px);
+  user-select: none;
+  transition: filter 0.15s ease;
+}
+.blur-numbers .money:hover {
+  filter: blur(2px);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
