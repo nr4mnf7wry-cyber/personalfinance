@@ -14,29 +14,61 @@ import {
   Entry, computeMonthTotals, computeRunningBalance, movingAverage,
   topExpenses, expensesByCategory, yearTotals, yoyByCategory, ytdCumulative,
 } from "@/lib/aggregate";
+import { savingsRateTrendInsight, expenseConcentrationInsight, cashflowStreakInsight, Insight } from "@/lib/insights";
 
 const now = new Date();
+const CURRENT_YEAR = now.getFullYear();
+const CURRENT_MONTH = now.getMonth() + 1;
 const CATEGORY_COLORS = ["#1971c2", "#e8590c", "#2f9e44", "#7048e8", "#e03131", "#f08c00", "#0ca678", "#495057"];
+const WEALTH_COLORS = ["#1971c2", "#7048e8"];
 
 export default function DashboardClient() {
-  const [entries, setEntries] = useState<Entry[]>([]);
-  const [portfolio, setPortfolio] = useState<{ value: number; gain: number } | null>(null);
-  const [selYear, setSelYear] = useState(now.getFullYear());
-  const [selMonth, setSelMonth] = useState(now.getMonth() + 1);
+  const [entriesRaw, setEntriesRaw] = useState<Entry[]>([]);
+  const [liquidBalance, setLiquidBalance] = useState<number | null>(null);
+  const [investedCapital, setInvestedCapital] = useState<number | null>(null);
+  const [selYear, setSelYear] = useState(CURRENT_YEAR);
+  const [selMonth, setSelMonth] = useState(CURRENT_MONTH);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/entries")
       .then((r) => r.json())
-      .then((data) => { setEntries(data); setLoading(false); });
+      .then((data) => { setEntriesRaw(data); setLoading(false); });
 
+    // Solde liquide = dernier solde de fin de mois renseigné (le plus récent, pas au-delà d'aujourd'hui)
+    fetch(`/api/balances?year=${CURRENT_YEAR}`)
+      .then((r) => r.json())
+      .then((balances: any[]) => {
+        const valid = balances.filter((b) => b.month <= CURRENT_MONTH && b.endBalance != null);
+        const latest = valid.sort((a, b) => b.month - a.month)[0];
+        setLiquidBalance(latest?.endBalance ?? null);
+      });
+
+    // Capital investi (coût d'acquisition net, converti en EUR) — valorisation en direct sur /investments
     fetch("/api/investments")
       .then((r) => r.json())
-      .then((txs: any[]) => {
-        const value = txs.reduce((s, t) => s + t.amount, 0);
-        setPortfolio({ value, gain: 0 }); // le +/- value réel se calcule sur /investments avec les cours live
+      .then(async (txs: any[]) => {
+        const currencies = Array.from(new Set(txs.map((t) => t.currency).filter((c: string) => c && c !== "EUR")));
+        const rateEntries = await Promise.all(
+          currencies.map((c) =>
+            fetch(`/api/exchange-rate?from=${c}&to=EUR`).then((r) => (r.ok ? r.json() : { rate: 1 })).then((d) => [c, d.rate ?? 1])
+          )
+        );
+        const rates: Record<string, number> = { EUR: 1, ...Object.fromEntries(rateEntries) };
+        const net = txs.reduce((s, t) => {
+          const signed = t.type === "vente" ? -t.amount : t.amount;
+          return s + signed * (rates[t.currency] ?? 1);
+        }, 0);
+        setInvestedCapital(net);
       });
   }, []);
+
+  // Plafonne toutes les données au mois réel en cours — pas de mois futurs affichés
+  // comme s'ils étaient réels (cf. saisies accidentelles ou pré-remplissage passé)
+  const entries = useMemo(
+    () => entriesRaw.filter((e) => e.year < CURRENT_YEAR || (e.year === CURRENT_YEAR && e.month <= CURRENT_MONTH)),
+    [entriesRaw]
+  );
 
   const monthTotals = useMemo(() => computeMonthTotals(entries), [entries]);
   const withBalance = useMemo(() => computeRunningBalance(monthTotals), [monthTotals]);
@@ -50,6 +82,8 @@ export default function DashboardClient() {
   const depensesDelta = previous && previous.depenses ? ((current?.depenses ?? 0) - previous.depenses) / previous.depenses * 100 : null;
 
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
+  // Les mois sélectionnables ne dépassent jamais le mois réel en cours
+  const monthOptions = MONTH_LABELS.filter((_, i) => selYear < CURRENT_YEAR || i + 1 <= CURRENT_MONTH);
 
   const donutData = useMemo(() => {
     const rows = expensesByCategory(entries, selYear, selMonth);
@@ -86,6 +120,22 @@ export default function DashboardClient() {
     [`${selYear - 1}`]: ytdPrevious.find((y) => y.month === i + 1)?.cumulative ?? null,
   }));
 
+  // Executive summary — insights réellement calculés à partir des données
+  const insights: Insight[] = useMemo(() => {
+    const list: (Insight | null)[] = [
+      savingsRateTrendInsight(monthTotals),
+      expenseConcentrationInsight(donutData, (current?.depenses ?? 0)),
+      cashflowStreakInsight(monthTotals),
+    ];
+    return list.filter((i): i is Insight => i !== null);
+  }, [monthTotals, donutData, current]);
+
+  const totalWealth = (liquidBalance ?? 0) + (investedCapital ?? 0);
+  const wealthAllocation = [
+    { name: "Liquidités", value: Math.max(liquidBalance ?? 0, 0) },
+    { name: "Investissements", value: Math.max(investedCapital ?? 0, 0) },
+  ].filter((w) => w.value > 0);
+
   if (loading) return <p className="text-gray-500">Chargement...</p>;
   if (entries.length === 0) {
     return (
@@ -97,86 +147,94 @@ export default function DashboardClient() {
 
   return (
     <div className="space-y-12">
-      {/* Sélecteur de période global */}
-      <div className="flex gap-3">
+      {/* Executive Summary */}
+      <section className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Résumé exécutif</h2>
+            <p className="text-sm text-gray-400">Situation au {MONTH_LABELS[CURRENT_MONTH - 1]} {CURRENT_YEAR}</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatTile label="Patrimoine total" value={totalWealth} />
+          <StatTile label="Solde net du mois" value={current?.net ?? 0} />
+          <StatTile label="Taux d'épargne" value={current?.savingsRate ?? 0} isCurrency={false} />
+          <StatTile label="Revenus du mois" value={current?.revenus ?? 0} delta={revenusDelta} />
+        </div>
+
+        {insights.length > 0 && (
+          <div className="card p-5 space-y-2">
+            {insights.map((ins, i) => (
+              <p key={i} className="text-sm flex items-start gap-2">
+                <span className={ins.tone === "positive" ? "text-green" : ins.tone === "negative" ? "text-red" : "text-gray-400"}>●</span>
+                <span className="text-gray-700">{ins.text}</span>
+              </p>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Sélecteur de période pour les sections détaillées ci-dessous */}
+      <div className="flex gap-3 items-center">
+        <span className="text-sm text-gray-400">Période détaillée :</span>
         <select value={selMonth} onChange={(e) => setSelMonth(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2">
-          {MONTH_LABELS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          {monthOptions.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
         </select>
         <select value={selYear} onChange={(e) => setSelYear(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2">
           {years.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
       </div>
 
-      {/* Stat tiles */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatTile label="Solde net du mois" value={current?.net ?? 0} />
-        <StatTile label="Taux d'épargne" value={current?.savingsRate ?? 0} isCurrency={false} />
-        <StatTile label="Revenus" value={current?.revenus ?? 0} delta={revenusDelta} />
-        <StatTile label="Dépenses" value={current?.depenses ?? 0} delta={depensesDelta} />
-      </div>
-
-      {/* A. Vue mensuelle */}
+      {/* A. Patrimoine */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Vue mensuelle — {MONTH_LABELS[selMonth - 1]} {selYear}</h2>
+        <h2 className="text-lg font-semibold">Patrimoine</h2>
         <div className="grid md:grid-cols-2 gap-6">
           <div className="card p-4">
-            <p className="text-sm text-gray-500 mb-2">Répartition des dépenses</p>
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100}>
-                  {donutData.map((_, i) => <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />)}
-                </Pie>
-                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+            <p className="text-sm text-gray-500 mb-2">Répartition liquidités / investissements</p>
+            {wealthAllocation.length > 0 ? (
+              <ResponsiveContainer width="100%" height={240}>
+                <PieChart>
+                  <Pie data={wealthAllocation} dataKey="value" nameKey="name" innerRadius={55} outerRadius={95}>
+                    {wealthAllocation.map((_, i) => <Cell key={i} fill={WEALTH_COLORS[i % WEALTH_COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <p className="text-sm text-gray-400 py-10 text-center">
+                Renseigne un solde de fin de mois dans /input et/ou une transaction dans /investments.
+              </p>
+            )}
           </div>
           <div className="card p-4">
-            <p className="text-sm text-gray-500 mb-2">Top 5 postes de dépense</p>
-            <ul className="space-y-2">
-              {top5.map((e, i) => (
-                <li key={i} className="flex justify-between text-sm border-b border-gray-100 pb-2">
-                  <span>{e.category}</span>
-                  <Money value={e.amount} />
-                </li>
-              ))}
-              {top5.length === 0 && <li className="text-gray-400 text-sm">Aucune dépense saisie</li>}
-            </ul>
+            <p className="text-sm text-gray-500 mb-2">Solde net cumulé dans le temps</p>
+            <ResponsiveContainer width="100%" height={240}>
+              <LineChart data={withBalance.map((t) => ({ label: `${MONTH_LABELS[t.month - 1].slice(0, 3)} ${t.year}`, balance: t.runningBalance }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+                <Line type="monotone" dataKey="balance" stroke="#1971c2" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </div>
-        <div className="card p-4">
-          <p className="text-sm text-gray-500 mb-2">Revenus / Dépenses / Épargne</p>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={[{ label: "Mois", Revenus: current?.revenus ?? 0, Dépenses: current?.depenses ?? 0, Épargne: current?.epargne ?? 0 }]} layout="vertical">
-              <XAxis type="number" />
-              <YAxis type="category" dataKey="label" hide />
-              <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
-              <Legend />
-              <Bar dataKey="Revenus" stackId="a" fill={GROUP_COLORS.revenus} />
-              <Bar dataKey="Dépenses" stackId="a" fill={GROUP_COLORS.fixes} />
-              <Bar dataKey="Épargne" stackId="a" fill={GROUP_COLORS.epargne} />
-            </BarChart>
-          </ResponsiveContainer>
+        <div className="card p-6 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-500">Capital investi (coût d'acquisition, converti EUR)</p>
+            <p className="text-2xl font-semibold"><Money value={investedCapital ?? 0} /></p>
+          </div>
+          <Link href="/investments" className="text-accent text-sm font-medium">
+            Voir le portefeuille en détail →
+          </Link>
         </div>
       </section>
 
-      {/* B. Évolution dans le temps */}
+      {/* B. Discipline de cash-flow */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Évolution dans le temps</h2>
-
-        <div className="card p-4">
-          <p className="text-sm text-gray-500 mb-2">Solde net cumulé (patrimoine dans le temps)</p>
-          <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={withBalance.map((t) => ({ label: `${MONTH_LABELS[t.month - 1].slice(0, 3)} ${t.year}`, balance: t.runningBalance }))}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
-              <Line type="monotone" dataKey="balance" stroke="#1971c2" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-
+        <h2 className="text-lg font-semibold">Discipline de cash-flow</h2>
         <div className="grid md:grid-cols-2 gap-6">
           <div className="card p-4">
             <p className="text-sm text-gray-500 mb-2">Revenus vs Dépenses vs Épargne</p>
@@ -226,7 +284,38 @@ export default function DashboardClient() {
         </div>
       </section>
 
-      {/* C. Vue annuelle */}
+      {/* C. Structure des dépenses (mois sélectionné) */}
+      <section className="space-y-4">
+        <h2 className="text-lg font-semibold">Structure des dépenses — {MONTH_LABELS[selMonth - 1]} {selYear}</h2>
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="card p-4">
+            <p className="text-sm text-gray-500 mb-2">Répartition par catégorie</p>
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100}>
+                  {donutData.map((_, i) => <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />)}
+                </Pie>
+                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="card p-4">
+            <p className="text-sm text-gray-500 mb-2">Top 5 postes de dépense</p>
+            <ul className="space-y-2">
+              {top5.map((e, i) => (
+                <li key={i} className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                  <span>{e.category}</span>
+                  <Money value={e.amount} />
+                </li>
+              ))}
+              {top5.length === 0 && <li className="text-gray-400 text-sm">Aucune dépense saisie</li>}
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* D. Vue annuelle */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Vue annuelle</h2>
         <div className="card p-4">
@@ -245,7 +334,7 @@ export default function DashboardClient() {
         </div>
       </section>
 
-      {/* D. YoY */}
+      {/* E. YoY */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Comparaison année sur année — {MONTH_LABELS[selMonth - 1]}</h2>
         <div className="grid md:grid-cols-2 gap-6">
@@ -298,20 +387,6 @@ export default function DashboardClient() {
               <Line type="monotone" dataKey={`${selYear - 1}`} stroke="#adb5bd" strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
-        </div>
-      </section>
-
-      {/* E. Widget investissements */}
-      <section>
-        <h2 className="text-lg font-semibold mb-4">Investissements</h2>
-        <div className="card p-6 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500">Valeur totale investie</p>
-            <p className="text-2xl font-semibold"><Money value={portfolio?.value ?? 0} /></p>
-          </div>
-          <Link href="/investments" className="text-accent text-sm font-medium">
-            Voir le détail →
-          </Link>
         </div>
       </section>
     </div>
