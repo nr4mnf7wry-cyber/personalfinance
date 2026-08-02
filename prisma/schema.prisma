@@ -100,8 +100,9 @@ model Transaction {
   date        DateTime
   ticker      String
   label       String?    // nom complet du titre
+  type        String     @default("achat") // "achat" | "vente"
   quantity    Float
-  unitPrice   Float      // prix unitaire d'achat, dans la devise ci-dessous
+  unitPrice   Float      // prix unitaire, dans la devise ci-dessous
   currency    String     @default("EUR") // devise du prix unitaire (EUR, USD, GBP...)
   amount      Float      // quantity * unitPrice, dans la devise ci-dessus
   sector      String?

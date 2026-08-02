@@ -90,16 +90,27 @@ export default function InputClient() {
     const prevYear = month === 1 ? year - 1 : year;
     const prevMonth = month === 1 ? 12 : month - 1;
 
-    fetch(`/api/entries?year=${prevYear}&month=${prevMonth}`)
-      .then((r) => r.json())
-      .then((prevData: any[]) => {
-        const map: Record<string, number> = {};
-        for (const c of categories) {
-          const found = prevData.find((e) => e.category === c.name && e.group === c.group && !e.subCategory);
-          map[c.id] = found?.amount ?? 0;
+    Promise.all([
+      fetch(`/api/entries?year=${year}&month=${month}`).then((r) => r.json()),
+      fetch(`/api/entries?year=${prevYear}&month=${prevMonth}`).then((r) => r.json()),
+    ]).then(([currentData, prevData]: [any[], any[]]) => {
+      const map: Record<string, number> = {};
+      for (const c of categories) {
+        const own = currentData.find((e) => e.category === c.name && e.group === c.group && !e.subCategory);
+        if (own) {
+          // le mois sélectionné a déjà été saisi -> on affiche SES propres valeurs
+          map[c.id] = own.amount;
+        } else if (c.group === "fixes") {
+          // nouveau mois : seules les dépenses fixes se pré-remplissent (elles ne changent pas)
+          const prev = prevData.find((e) => e.category === c.name && e.group === c.group && !e.subCategory);
+          map[c.id] = prev?.amount ?? 0;
+        } else {
+          // revenus / variables / épargne : toujours vierge sur un nouveau mois
+          map[c.id] = 0;
         }
-        setAmounts(map);
-      });
+      }
+      setAmounts(map);
+    });
 
     fetch(`/api/balances?year=${year}&month=${month}`)
       .then((r) => r.json())

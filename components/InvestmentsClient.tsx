@@ -12,6 +12,7 @@ type Transaction = {
   date: string;
   ticker: string;
   label?: string;
+  type: "achat" | "vente";
   quantity: number;
   unitPrice: number;
   currency: string;
@@ -22,40 +23,69 @@ type Transaction = {
 const COLORS = ["#1971c2", "#e8590c", "#2f9e44", "#7048e8", "#e03131", "#f08c00", "#0ca678", "#495057"];
 const CURRENCIES = ["EUR", "USD", "GBP", "CHF"];
 
+const emptyForm = { date: new Date().toISOString().slice(0, 10), ticker: "", label: "", type: "achat" as "achat" | "vente", quantity: "", unitPrice: "", currency: "EUR", sector: "" };
+
 export default function InvestmentsClient() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [prices, setPrices] = useState<Record<string, { price: number; changePercent: number } | null>>({});
-  const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 }); // devise -> taux vers EUR
+  const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), ticker: "", label: "", quantity: "", unitPrice: "", currency: "EUR", sector: "" });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
 
   function refetchTransactions() {
     return fetch("/api/investments").then((r) => r.json()).then(setTransactions);
   }
 
-  async function handleAddTransaction(e: React.FormEvent) {
+  function startEdit(t: Transaction) {
+    setEditingId(t.id);
+    setForm({
+      date: t.date.slice(0, 10),
+      ticker: t.ticker,
+      label: t.label ?? "",
+      type: t.type ?? "achat",
+      quantity: String(t.quantity),
+      unitPrice: String(t.unitPrice),
+      currency: t.currency ?? "EUR",
+      sector: t.sector ?? "",
+    });
+    setShowForm(true);
+  }
+
+  function cancelForm() {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(emptyForm);
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Supprimer cette transaction ?")) return;
+    await fetch(`/api/investments/${id}`, { method: "DELETE" });
+    refetchTransactions();
+  }
+
+  async function handleSubmitForm(e: React.FormEvent) {
     e.preventDefault();
     if (!form.ticker || !form.quantity || !form.unitPrice) return;
     setSubmitting(true);
-    const res = await fetch("/api/investments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        date: new Date(form.date).toISOString(),
-        ticker: form.ticker,
-        label: form.label || undefined,
-        quantity: Number(form.quantity),
-        unitPrice: Number(form.unitPrice),
-        currency: form.currency,
-        sector: form.sector || undefined,
-      }),
+    const body = JSON.stringify({
+      date: new Date(form.date).toISOString(),
+      ticker: form.ticker,
+      label: form.label || undefined,
+      type: form.type,
+      quantity: Number(form.quantity),
+      unitPrice: Number(form.unitPrice),
+      currency: form.currency,
+      sector: form.sector || undefined,
     });
+    const res = editingId
+      ? await fetch(`/api/investments/${editingId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body })
+      : await fetch("/api/investments", { method: "POST", headers: { "Content-Type": "application/json" }, body });
     setSubmitting(false);
     if (res.ok) {
-      setForm({ date: new Date().toISOString().slice(0, 10), ticker: "", label: "", quantity: "", unitPrice: "", currency: "EUR", sector: "" });
-      setShowForm(false);
+      cancelForm();
       refetchTransactions();
     }
   }
@@ -66,22 +96,37 @@ export default function InvestmentsClient() {
       .then((data) => { setTransactions(data); setLoading(false); });
   }, []);
 
-  // Positions agrégées par ticker (quantité totale, prix moyen d'achat pondéré, devise d'origine)
+  // Positions agrégées par ticker : quantité nette (achats - ventes), prix moyen
+  // d'achat, plus-value réalisée (sur les ventes) et latente (sur ce qui reste)
   const positions = useMemo(() => {
-    const map = new Map<string, { ticker: string; quantity: number; invested: number; currency: string; sector?: string; label?: string }>();
+    const map = new Map<string, Transaction[]>();
     for (const t of transactions) {
-      const cur = map.get(t.ticker) ?? { ticker: t.ticker, quantity: 0, invested: 0, currency: t.currency ?? "EUR", sector: t.sector, label: t.label };
-      cur.quantity += t.quantity;
-      cur.invested += t.amount;
-      map.set(t.ticker, cur);
+      if (!map.has(t.ticker)) map.set(t.ticker, []);
+      map.get(t.ticker)!.push(t);
     }
-    return Array.from(map.values()).map((p) => ({
-      ...p,
-      avgPrice: p.quantity !== 0 ? p.invested / p.quantity : 0,
-    }));
+    return Array.from(map.entries()).map(([ticker, txs]) => {
+      const buys = txs.filter((t) => t.type !== "vente");
+      const sells = txs.filter((t) => t.type === "vente");
+      const currency = txs[0]?.currency ?? "EUR";
+      const sector = txs[0]?.sector;
+      const label = txs[0]?.label;
+
+      const totalBuyQty = buys.reduce((s, t) => s + t.quantity, 0);
+      const totalBuyAmount = buys.reduce((s, t) => s + t.amount, 0);
+      const avgPrice = totalBuyQty !== 0 ? totalBuyAmount / totalBuyQty : 0;
+
+      const totalSellQty = sells.reduce((s, t) => s + t.quantity, 0);
+      const totalSellAmount = sells.reduce((s, t) => s + t.amount, 0);
+
+      const quantity = totalBuyQty - totalSellQty;
+      const invested = avgPrice * quantity; // coût d'acquisition de ce qu'il reste
+      const realizedGain = totalSellAmount - avgPrice * totalSellQty; // plus-value déjà réalisée
+
+      return { ticker, quantity, invested, avgPrice, currency, sector, label, realizedGain };
+    });
   }, [transactions]);
 
-  // Récupère les taux de change pour chaque devise utilisée (autre que EUR)
+  // Taux de change pour chaque devise utilisée (hors EUR)
   useEffect(() => {
     const currencies = new Set(positions.map((p) => p.currency).filter((c) => c && c !== "EUR"));
     currencies.forEach((c) => {
@@ -94,9 +139,9 @@ export default function InvestmentsClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions]);
 
-  // Récupère les cours actuels pour chaque ticker détenu (dans la devise d'origine du titre)
+  // Cours actuels (uniquement utile si on détient encore des titres)
   useEffect(() => {
-    positions.forEach((p) => {
+    positions.filter((p) => p.quantity > 0).forEach((p) => {
       if (prices[p.ticker] !== undefined) return;
       fetch(`/api/stock-price?ticker=${encodeURIComponent(p.ticker)}`)
         .then((r) => (r.ok ? r.json() : null))
@@ -116,16 +161,19 @@ export default function InvestmentsClient() {
     const valueInOrigCurrency = live ? live * p.quantity : p.invested;
     return s + toEur(valueInOrigCurrency, p.currency);
   }, 0);
-  const totalGain = totalCurrentValue - totalInvested;
-  const totalGainPct = totalInvested ? (totalGain / totalInvested) * 100 : 0;
+  const totalRealizedGain = positions.reduce((s, p) => s + toEur(p.realizedGain, p.currency), 0);
+  const totalUnrealizedGain = totalCurrentValue - totalInvested;
+  const totalGain = totalUnrealizedGain + totalRealizedGain;
+  const totalGainPct = totalInvested ? (totalUnrealizedGain / totalInvested) * 100 : 0;
 
-  // Évolution du portefeuille (approximation : valeur investie cumulée mois par mois, convertie en EUR)
+  // Évolution du portefeuille (approximation : flux net cumulé achats - ventes, en EUR)
   const evolution = useMemo(() => {
     const sorted = [...transactions].sort((a, b) => a.date.localeCompare(b.date));
     let running = 0;
     const map = new Map<string, number>();
     for (const t of sorted) {
-      running += toEur(t.amount, t.currency ?? "EUR");
+      const signed = t.type === "vente" ? -t.amount : t.amount;
+      running += toEur(signed, t.currency ?? "EUR");
       const key = t.date.slice(0, 7);
       map.set(key, running);
     }
@@ -135,13 +183,15 @@ export default function InvestmentsClient() {
 
   const sectorAllocation = useMemo(() => {
     const map = new Map<string, number>();
-    for (const p of positions) {
+    for (const p of positions.filter((p) => p.quantity > 0)) {
       const key = p.sector ?? "Non renseigné";
       map.set(key, (map.get(key) ?? 0) + toEur(p.invested, p.currency));
     }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions, rates]);
+
+  const heldPositions = positions.filter((p) => p.quantity > 0.0001);
 
   if (loading) return <p className="text-gray-500">Chargement...</p>;
 
@@ -151,7 +201,7 @@ export default function InvestmentsClient() {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">Résumé</h2>
         <button
-          onClick={() => setShowForm((s) => !s)}
+          onClick={() => (showForm ? cancelForm() : setShowForm(true))}
           className="text-sm bg-accent text-white rounded-lg px-4 py-2 font-medium"
         >
           {showForm ? "Annuler" : "+ Ajouter une transaction"}
@@ -159,7 +209,14 @@ export default function InvestmentsClient() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleAddTransaction} className="card p-4 flex flex-wrap items-end gap-3">
+        <form onSubmit={handleSubmitForm} className="card p-4 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Type</label>
+            <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as "achat" | "vente" }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+              <option value="achat">Achat</option>
+              <option value="vente">Vente</option>
+            </select>
+          </div>
           <div>
             <label className="text-xs text-gray-500 block mb-1">Date</label>
             <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm" required />
@@ -177,7 +234,7 @@ export default function InvestmentsClient() {
             <input type="number" step="0.0001" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-24 text-right" required />
           </div>
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Prix unitaire</label>
+            <label className="text-xs text-gray-500 block mb-1">Prix unitaire {form.type === "vente" ? "(vente)" : "(achat)"}</label>
             <input type="number" step="0.01" value={form.unitPrice} onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-28 text-right" required />
           </div>
           <div>
@@ -191,13 +248,13 @@ export default function InvestmentsClient() {
             <input placeholder="Tech" value={form.sector} onChange={(e) => setForm((f) => ({ ...f, sector: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-28" />
           </div>
           <button type="submit" disabled={submitting} className="bg-accent text-white rounded-lg px-4 py-1.5 text-sm font-medium disabled:opacity-50">
-            {submitting ? "Ajout..." : "Ajouter"}
+            {submitting ? "Enregistrement..." : editingId ? "Enregistrer" : "Ajouter"}
           </button>
         </form>
       )}
 
       {/* Chiffres clés (convertis en EUR) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="card p-5">
           <p className="text-sm text-gray-500">Valeur du portefeuille</p>
           <p className="text-2xl font-semibold"><Money value={totalCurrentValue} /></p>
@@ -208,13 +265,19 @@ export default function InvestmentsClient() {
         </div>
         <div className="card p-5">
           <p className="text-sm text-gray-500">Plus/moins-value latente</p>
-          <p className={`text-2xl font-semibold ${totalGain >= 0 ? "text-green" : "text-red"}`}>
-            <Money value={totalGain} /> ({totalGainPct.toFixed(1)}%)
+          <p className={`text-2xl font-semibold ${totalUnrealizedGain >= 0 ? "text-green" : "text-red"}`}>
+            <Money value={totalUnrealizedGain} /> ({totalGainPct.toFixed(1)}%)
           </p>
         </div>
         <div className="card p-5">
-          <p className="text-sm text-gray-500">Positions</p>
-          <p className="text-2xl font-semibold">{positions.length}</p>
+          <p className="text-sm text-gray-500">Plus/moins-value réalisée</p>
+          <p className={`text-2xl font-semibold ${totalRealizedGain >= 0 ? "text-green" : "text-red"}`}>
+            <Money value={totalRealizedGain} />
+          </p>
+        </div>
+        <div className="card p-5">
+          <p className="text-sm text-gray-500">Positions détenues</p>
+          <p className="text-2xl font-semibold">{heldPositions.length}</p>
         </div>
       </div>
 
@@ -233,11 +296,12 @@ export default function InvestmentsClient() {
                 <th className="px-4 py-2 text-right">Prix moyen d'achat</th>
                 <th className="px-4 py-2 text-right">Cours actuel</th>
                 <th className="px-4 py-2 text-right">Valeur actuelle (EUR)</th>
-                <th className="px-4 py-2 text-right">+/- value</th>
+                <th className="px-4 py-2 text-right">+/- value latente</th>
+                <th className="px-4 py-2 text-right">+/- value réalisée</th>
               </tr>
             </thead>
             <tbody>
-              {positions.map((p) => {
+              {heldPositions.map((p) => {
                 const live = prices[p.ticker];
                 const currentValueOrig = live ? live.price * p.quantity : p.invested;
                 const currentValueEur = toEur(currentValueOrig, p.currency);
@@ -250,9 +314,7 @@ export default function InvestmentsClient() {
                       {p.ticker} {p.currency !== "EUR" && <span className="text-xs text-gray-400 font-normal">({p.currency})</span>}
                     </td>
                     <td className="px-4 py-2 text-right">{p.quantity}</td>
-                    <td className="px-4 py-2 text-right">
-                      {p.avgPrice.toFixed(2)} {p.currency}
-                    </td>
+                    <td className="px-4 py-2 text-right">{p.avgPrice.toFixed(2)} {p.currency}</td>
                     <td className="px-4 py-2 text-right">
                       {live ? `${live.price.toFixed(2)} ${p.currency}` : <span className="text-gray-400">—</span>}
                     </td>
@@ -260,12 +322,15 @@ export default function InvestmentsClient() {
                     <td className={`px-4 py-2 text-right ${gain >= 0 ? "text-green" : "text-red"}`}>
                       <Money value={gain} /> ({gainPct.toFixed(1)}%)
                     </td>
+                    <td className={`px-4 py-2 text-right ${p.realizedGain >= 0 ? "text-green" : "text-red"}`}>
+                      {p.realizedGain !== 0 ? <Money value={toEur(p.realizedGain, p.currency)} /> : <span className="text-gray-300">—</span>}
+                    </td>
                   </tr>
                 );
               })}
-              {positions.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">
-                  Aucune position — ajoute une transaction ci-dessus, ou une catégorie "Investissement" lors de ta saisie mensuelle.
+              {heldPositions.length === 0 && (
+                <tr><td colSpan={7} className="px-4 py-6 text-center text-gray-400">
+                  Aucune position en cours — ajoute une transaction ci-dessus.
                 </td></tr>
               )}
             </tbody>
@@ -309,26 +374,40 @@ export default function InvestmentsClient() {
             <thead>
               <tr className="border-b border-gray-100 text-left text-gray-500">
                 <th className="px-4 py-2">Date</th>
+                <th className="px-4 py-2">Type</th>
                 <th className="px-4 py-2">Ticker</th>
                 <th className="px-4 py-2">Titre</th>
                 <th className="px-4 py-2 text-right">Quantité</th>
                 <th className="px-4 py-2 text-right">Prix unitaire</th>
                 <th className="px-4 py-2 text-right">Montant</th>
                 <th className="px-4 py-2 text-right">Devise</th>
+                <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {transactions.map((t) => (
                 <tr key={t.id} className="border-b border-gray-50">
                   <td className="px-4 py-2">{new Date(t.date).toLocaleDateString("fr-FR")}</td>
+                  <td className="px-4 py-2">
+                    <span className={`text-xs px-2 py-0.5 rounded ${t.type === "vente" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
+                      {t.type === "vente" ? "Vente" : "Achat"}
+                    </span>
+                  </td>
                   <td className="px-4 py-2 font-medium">{t.ticker}</td>
                   <td className="px-4 py-2 text-gray-500">{t.label ?? "—"}</td>
                   <td className="px-4 py-2 text-right">{t.quantity}</td>
                   <td className="px-4 py-2 text-right">{t.unitPrice.toFixed(2)}</td>
                   <td className="px-4 py-2 text-right">{t.amount.toFixed(2)}</td>
                   <td className="px-4 py-2 text-right text-gray-500">{t.currency ?? "EUR"}</td>
+                  <td className="px-4 py-2 text-right whitespace-nowrap">
+                    <button onClick={() => startEdit(t)} className="text-gray-400 hover:text-accent text-xs mr-2" title="Modifier">✎</button>
+                    <button onClick={() => handleDelete(t.id)} className="text-gray-400 hover:text-red-500 text-xs" title="Supprimer">✕</button>
+                  </td>
                 </tr>
               ))}
+              {transactions.length === 0 && (
+                <tr><td colSpan={9} className="px-4 py-6 text-center text-gray-400">Aucune transaction pour le moment.</td></tr>
+              )}
             </tbody>
           </table>
         </div>

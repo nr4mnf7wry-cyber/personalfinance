@@ -24,6 +24,7 @@ const schema = z.object({
   date: z.string(), // ISO
   ticker: z.string().min(1),
   label: z.string().optional(),
+  type: z.enum(["achat", "vente"]).optional(),
   quantity: z.number(),
   unitPrice: z.number(),
   currency: z.string().optional(),
@@ -47,6 +48,7 @@ export async function POST(req: Request) {
       date: new Date(d.date),
       ticker: d.ticker.toUpperCase(),
       label: d.label,
+      type: d.type ?? "achat",
       quantity: d.quantity,
       unitPrice: d.unitPrice,
       currency: d.currency?.toUpperCase() || "EUR",
