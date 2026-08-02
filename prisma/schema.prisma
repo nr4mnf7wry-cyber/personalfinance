@@ -33,7 +33,7 @@ model MonthEntry {
 
   group        String   // "revenus" | "fixes" | "variables" | "epargne"
   category     String   // ex: "Salaire", "Loyer", "Investissement", ...
-  subCategory  String?  // optionnel, vue détaillée
+  subCategory  String   @default("") // "" = pas de sous-catégorie (vue condensée)
   amount       Float
 
   // si la ligne "Investissement" génère une transaction liée
