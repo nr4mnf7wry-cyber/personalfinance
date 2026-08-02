@@ -29,6 +29,7 @@ export default function InputClient() {
   const [investTicker, setInvestTicker] = useState("");
   const [investQty, setInvestQty] = useState<number | "">("");
   const [investPrice, setInvestPrice] = useState<number | "">("");
+  const [investCurrency, setInvestCurrency] = useState("EUR");
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const [allEntries, setAllEntries] = useState<any[]>([]);
@@ -196,7 +197,7 @@ export default function InputClient() {
       subCategory: null,
       amount: c.isAdjustment ? adjustmentAmount : Math.round((amounts[c.id] ?? 0) * 100) / 100,
       ...(c.isInvestment && investTicker && investQty && investPrice
-        ? { investment: { ticker: investTicker, quantity: Number(investQty), unitPrice: Number(investPrice) } }
+        ? { investment: { ticker: investTicker, quantity: Number(investQty), unitPrice: Number(investPrice), currency: investCurrency } }
         : {}),
     }));
 
@@ -375,6 +376,12 @@ export default function InputClient() {
                     <input placeholder="Ticker (ex: MSFT)" value={investTicker} onChange={(e) => setInvestTicker(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-40" />
                     <input type="number" step="0.01" placeholder="Quantité" value={investQty} onChange={(e) => setInvestQty(e.target.value ? Number(e.target.value) : "")} className="border border-gray-300 rounded-lg px-3 py-1.5 w-32" />
                     <input type="number" step="0.01" placeholder="Prix unitaire" value={investPrice} onChange={(e) => setInvestPrice(e.target.value ? Number(e.target.value) : "")} className="border border-gray-300 rounded-lg px-3 py-1.5 w-32" />
+                    <select value={investCurrency} onChange={(e) => setInvestCurrency(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5">
+                      <option value="EUR">EUR</option>
+                      <option value="USD">USD</option>
+                      <option value="GBP">GBP</option>
+                      <option value="CHF">CHF</option>
+                    </select>
                   </div>
                 </div>
               )}

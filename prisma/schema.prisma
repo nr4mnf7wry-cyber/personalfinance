@@ -101,8 +101,9 @@ model Transaction {
   ticker      String
   label       String?    // nom complet du titre
   quantity    Float
-  unitPrice   Float      // prix moyen d'achat pour cette transaction
-  amount      Float      // quantity * unitPrice (peut différer si frais)
+  unitPrice   Float      // prix unitaire d'achat, dans la devise ci-dessous
+  currency    String     @default("EUR") // devise du prix unitaire (EUR, USD, GBP...)
+  amount      Float      // quantity * unitPrice, dans la devise ci-dessus
   sector      String?
 
   monthEntry  MonthEntry?

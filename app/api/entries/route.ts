@@ -42,6 +42,7 @@ const lineSchema = z.object({
       label: z.string().optional(),
       quantity: z.number(),
       unitPrice: z.number(),
+      currency: z.string().optional(),
       sector: z.string().optional(),
     })
     .optional(),
@@ -84,6 +85,7 @@ export async function POST(req: Request) {
           label: line.investment.label,
           quantity: line.investment.quantity,
           unitPrice: line.investment.unitPrice,
+          currency: line.investment.currency ?? "EUR",
           amount: line.amount,
           sector: line.investment.sector,
         },

@@ -14,18 +14,21 @@ type Transaction = {
   label?: string;
   quantity: number;
   unitPrice: number;
+  currency: string;
   amount: number;
   sector?: string;
 };
 
 const COLORS = ["#1971c2", "#e8590c", "#2f9e44", "#7048e8", "#e03131", "#f08c00", "#0ca678", "#495057"];
+const CURRENCIES = ["EUR", "USD", "GBP", "CHF"];
 
 export default function InvestmentsClient() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [prices, setPrices] = useState<Record<string, { price: number; changePercent: number } | null>>({});
+  const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 }); // devise -> taux vers EUR
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), ticker: "", label: "", quantity: "", unitPrice: "", sector: "" });
+  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), ticker: "", label: "", quantity: "", unitPrice: "", currency: "EUR", sector: "" });
   const [submitting, setSubmitting] = useState(false);
 
   function refetchTransactions() {
@@ -45,12 +48,13 @@ export default function InvestmentsClient() {
         label: form.label || undefined,
         quantity: Number(form.quantity),
         unitPrice: Number(form.unitPrice),
+        currency: form.currency,
         sector: form.sector || undefined,
       }),
     });
     setSubmitting(false);
     if (res.ok) {
-      setForm({ date: new Date().toISOString().slice(0, 10), ticker: "", label: "", quantity: "", unitPrice: "", sector: "" });
+      setForm({ date: new Date().toISOString().slice(0, 10), ticker: "", label: "", quantity: "", unitPrice: "", currency: "EUR", sector: "" });
       setShowForm(false);
       refetchTransactions();
     }
@@ -62,11 +66,11 @@ export default function InvestmentsClient() {
       .then((data) => { setTransactions(data); setLoading(false); });
   }, []);
 
-  // Positions agrégées par ticker (quantité totale, prix moyen d'achat pondéré)
+  // Positions agrégées par ticker (quantité totale, prix moyen d'achat pondéré, devise d'origine)
   const positions = useMemo(() => {
-    const map = new Map<string, { ticker: string; quantity: number; invested: number; sector?: string; label?: string }>();
+    const map = new Map<string, { ticker: string; quantity: number; invested: number; currency: string; sector?: string; label?: string }>();
     for (const t of transactions) {
-      const cur = map.get(t.ticker) ?? { ticker: t.ticker, quantity: 0, invested: 0, sector: t.sector, label: t.label };
+      const cur = map.get(t.ticker) ?? { ticker: t.ticker, quantity: 0, invested: 0, currency: t.currency ?? "EUR", sector: t.sector, label: t.label };
       cur.quantity += t.quantity;
       cur.invested += t.amount;
       map.set(t.ticker, cur);
@@ -77,7 +81,20 @@ export default function InvestmentsClient() {
     }));
   }, [transactions]);
 
-  // Récupère les cours actuels pour chaque ticker détenu
+  // Récupère les taux de change pour chaque devise utilisée (autre que EUR)
+  useEffect(() => {
+    const currencies = new Set(positions.map((p) => p.currency).filter((c) => c && c !== "EUR"));
+    currencies.forEach((c) => {
+      if (rates[c] !== undefined) return;
+      fetch(`/api/exchange-rate?from=${c}&to=EUR`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => setRates((prev) => ({ ...prev, [c]: data?.rate ?? 1 })))
+        .catch(() => setRates((prev) => ({ ...prev, [c]: 1 })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions]);
+
+  // Récupère les cours actuels pour chaque ticker détenu (dans la devise d'origine du titre)
   useEffect(() => {
     positions.forEach((p) => {
       if (prices[p.ticker] !== undefined) return;
@@ -89,35 +106,42 @@ export default function InvestmentsClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions]);
 
-  const totalInvested = positions.reduce((s, p) => s + p.invested, 0);
+  function toEur(amount: number, currency: string) {
+    return amount * (rates[currency] ?? 1);
+  }
+
+  const totalInvested = positions.reduce((s, p) => s + toEur(p.invested, p.currency), 0);
   const totalCurrentValue = positions.reduce((s, p) => {
     const live = prices[p.ticker]?.price;
-    return s + (live ? live * p.quantity : p.invested);
+    const valueInOrigCurrency = live ? live * p.quantity : p.invested;
+    return s + toEur(valueInOrigCurrency, p.currency);
   }, 0);
   const totalGain = totalCurrentValue - totalInvested;
   const totalGainPct = totalInvested ? (totalGain / totalInvested) * 100 : 0;
 
-  // Évolution du portefeuille (approximation : valeur investie cumulée mois par mois)
+  // Évolution du portefeuille (approximation : valeur investie cumulée mois par mois, convertie en EUR)
   const evolution = useMemo(() => {
     const sorted = [...transactions].sort((a, b) => a.date.localeCompare(b.date));
     let running = 0;
     const map = new Map<string, number>();
     for (const t of sorted) {
-      running += t.amount;
+      running += toEur(t.amount, t.currency ?? "EUR");
       const key = t.date.slice(0, 7);
       map.set(key, running);
     }
     return Array.from(map.entries()).map(([label, value]) => ({ label, value }));
-  }, [transactions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions, rates]);
 
   const sectorAllocation = useMemo(() => {
     const map = new Map<string, number>();
     for (const p of positions) {
       const key = p.sector ?? "Non renseigné";
-      map.set(key, (map.get(key) ?? 0) + p.invested);
+      map.set(key, (map.get(key) ?? 0) + toEur(p.invested, p.currency));
     }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value }));
-  }, [positions]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions, rates]);
 
   if (loading) return <p className="text-gray-500">Chargement...</p>;
 
@@ -157,6 +181,12 @@ export default function InvestmentsClient() {
             <input type="number" step="0.01" value={form.unitPrice} onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-28 text-right" required />
           </div>
           <div>
+            <label className="text-xs text-gray-500 block mb-1">Devise</label>
+            <select value={form.currency} onChange={(e) => setForm((f) => ({ ...f, currency: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
+              {CURRENCIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
             <label className="text-xs text-gray-500 block mb-1">Secteur (optionnel)</label>
             <input placeholder="Tech" value={form.sector} onChange={(e) => setForm((f) => ({ ...f, sector: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-28" />
           </div>
@@ -166,7 +196,7 @@ export default function InvestmentsClient() {
         </form>
       )}
 
-      {/* Chiffres clés */}
+      {/* Chiffres clés (convertis en EUR) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="card p-5">
           <p className="text-sm text-gray-500">Valeur du portefeuille</p>
@@ -191,6 +221,9 @@ export default function InvestmentsClient() {
       {/* Positions */}
       <section>
         <h2 className="text-lg font-semibold mb-3">Positions actuelles</h2>
+        <p className="text-xs text-gray-400 mb-2">
+          Montants convertis en EUR au taux du jour (source : Frankfurter / Banque Centrale Européenne)
+        </p>
         <div className="card overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
@@ -199,25 +232,31 @@ export default function InvestmentsClient() {
                 <th className="px-4 py-2 text-right">Quantité</th>
                 <th className="px-4 py-2 text-right">Prix moyen d'achat</th>
                 <th className="px-4 py-2 text-right">Cours actuel</th>
-                <th className="px-4 py-2 text-right">Valeur actuelle</th>
+                <th className="px-4 py-2 text-right">Valeur actuelle (EUR)</th>
                 <th className="px-4 py-2 text-right">+/- value</th>
               </tr>
             </thead>
             <tbody>
               {positions.map((p) => {
                 const live = prices[p.ticker];
-                const currentValue = live ? live.price * p.quantity : p.invested;
-                const gain = currentValue - p.invested;
-                const gainPct = p.invested ? (gain / p.invested) * 100 : 0;
+                const currentValueOrig = live ? live.price * p.quantity : p.invested;
+                const currentValueEur = toEur(currentValueOrig, p.currency);
+                const investedEur = toEur(p.invested, p.currency);
+                const gain = currentValueEur - investedEur;
+                const gainPct = investedEur ? (gain / investedEur) * 100 : 0;
                 return (
                   <tr key={p.ticker} className="border-b border-gray-50">
-                    <td className="px-4 py-2 font-medium">{p.ticker}</td>
-                    <td className="px-4 py-2 text-right">{p.quantity}</td>
-                    <td className="px-4 py-2 text-right"><Money value={p.avgPrice} /></td>
-                    <td className="px-4 py-2 text-right">
-                      {live ? <Money value={live.price} /> : <span className="text-gray-400">—</span>}
+                    <td className="px-4 py-2 font-medium">
+                      {p.ticker} {p.currency !== "EUR" && <span className="text-xs text-gray-400 font-normal">({p.currency})</span>}
                     </td>
-                    <td className="px-4 py-2 text-right"><Money value={currentValue} /></td>
+                    <td className="px-4 py-2 text-right">{p.quantity}</td>
+                    <td className="px-4 py-2 text-right">
+                      {p.avgPrice.toFixed(2)} {p.currency}
+                    </td>
+                    <td className="px-4 py-2 text-right">
+                      {live ? `${live.price.toFixed(2)} ${p.currency}` : <span className="text-gray-400">—</span>}
+                    </td>
+                    <td className="px-4 py-2 text-right"><Money value={currentValueEur} /></td>
                     <td className={`px-4 py-2 text-right ${gain >= 0 ? "text-green" : "text-red"}`}>
                       <Money value={gain} /> ({gainPct.toFixed(1)}%)
                     </td>
@@ -226,7 +265,7 @@ export default function InvestmentsClient() {
               })}
               {positions.length === 0 && (
                 <tr><td colSpan={6} className="px-4 py-6 text-center text-gray-400">
-                  Aucune position — ajoute un montant sur la catégorie "Investissement" lors de ta saisie mensuelle.
+                  Aucune position — ajoute une transaction ci-dessus, ou une catégorie "Investissement" lors de ta saisie mensuelle.
                 </td></tr>
               )}
             </tbody>
@@ -237,7 +276,7 @@ export default function InvestmentsClient() {
       {/* Graphiques */}
       <div className="grid md:grid-cols-2 gap-6">
         <div className="card p-4">
-          <p className="text-sm text-gray-500 mb-2">Évolution du portefeuille</p>
+          <p className="text-sm text-gray-500 mb-2">Évolution du portefeuille (EUR)</p>
           <ResponsiveContainer width="100%" height={240}>
             <LineChart data={evolution}>
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
@@ -249,7 +288,7 @@ export default function InvestmentsClient() {
           </ResponsiveContainer>
         </div>
         <div className="card p-4">
-          <p className="text-sm text-gray-500 mb-2">Répartition par secteur</p>
+          <p className="text-sm text-gray-500 mb-2">Répartition par secteur (EUR)</p>
           <ResponsiveContainer width="100%" height={240}>
             <PieChart>
               <Pie data={sectorAllocation} dataKey="value" nameKey="name" innerRadius={50} outerRadius={90}>
@@ -275,6 +314,7 @@ export default function InvestmentsClient() {
                 <th className="px-4 py-2 text-right">Quantité</th>
                 <th className="px-4 py-2 text-right">Prix unitaire</th>
                 <th className="px-4 py-2 text-right">Montant</th>
+                <th className="px-4 py-2 text-right">Devise</th>
               </tr>
             </thead>
             <tbody>
@@ -284,8 +324,9 @@ export default function InvestmentsClient() {
                   <td className="px-4 py-2 font-medium">{t.ticker}</td>
                   <td className="px-4 py-2 text-gray-500">{t.label ?? "—"}</td>
                   <td className="px-4 py-2 text-right">{t.quantity}</td>
-                  <td className="px-4 py-2 text-right"><Money value={t.unitPrice} /></td>
-                  <td className="px-4 py-2 text-right"><Money value={t.amount} /></td>
+                  <td className="px-4 py-2 text-right">{t.unitPrice.toFixed(2)}</td>
+                  <td className="px-4 py-2 text-right">{t.amount.toFixed(2)}</td>
+                  <td className="px-4 py-2 text-right text-gray-500">{t.currency ?? "EUR"}</td>
                 </tr>
               ))}
             </tbody>

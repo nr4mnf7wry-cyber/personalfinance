@@ -26,6 +26,7 @@ const schema = z.object({
   label: z.string().optional(),
   quantity: z.number(),
   unitPrice: z.number(),
+  currency: z.string().optional(),
   sector: z.string().optional(),
 });
 
@@ -48,6 +49,7 @@ export async function POST(req: Request) {
       label: d.label,
       quantity: d.quantity,
       unitPrice: d.unitPrice,
+      currency: d.currency?.toUpperCase() || "EUR",
       amount: d.quantity * d.unitPrice,
       sector: d.sector,
     },
