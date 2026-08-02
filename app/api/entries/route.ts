@@ -30,6 +30,28 @@ export async function GET(req: Request) {
   }
 }
 
+// DELETE /api/entries                              -> supprime TOUT l'historique de l'utilisateur
+// DELETE /api/entries?group=fixes&category=Loyer    -> supprime uniquement cette ligne (tous les mois)
+export async function DELETE(req: Request) {
+  const session = await getServerSession(authOptions);
+  if (!session?.user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
+  const userId = (session.user as any).id;
+
+  const { searchParams } = new URL(req.url);
+  const group = searchParams.get("group");
+  const category = searchParams.get("category");
+
+  const result = await prisma.monthEntry.deleteMany({
+    where: {
+      userId,
+      ...(group ? { group } : {}),
+      ...(category ? { category } : {}),
+    },
+  });
+
+  return NextResponse.json({ deleted: result.count });
+}
+
 const lineSchema = z.object({
   group: z.enum(["revenus", "fixes", "variables", "epargne"]),
   category: z.string().min(1),

@@ -13,6 +13,7 @@ type Category = {
   expiresAt: string | null;
   isInvestment: boolean;
   isAdjustment: boolean;
+  order: number;
 };
 
 const now = new Date();
@@ -185,6 +186,39 @@ export default function InputClient() {
     });
     refetchCategories();
     refetchAllEntries();
+  }
+
+  async function handleDeleteRow(group: string, category: string) {
+    await fetch(`/api/entries?group=${encodeURIComponent(group)}&category=${encodeURIComponent(category)}`, {
+      method: "DELETE",
+    });
+    refetchAllEntries();
+  }
+
+  async function handleDeleteAllHistory() {
+    await fetch("/api/entries", { method: "DELETE" });
+    refetchAllEntries();
+  }
+
+  async function handleReorder(categoryId: string, direction: "up" | "down") {
+    const cat = categories.find((c) => c.id === categoryId);
+    if (!cat) return;
+    const sameGroup = categories.filter((c) => c.group === cat.group).sort((a, b) => a.order - b.order);
+    const idx = sameGroup.findIndex((c) => c.id === categoryId);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sameGroup.length) return;
+    const other = sameGroup[swapIdx];
+    await Promise.all([
+      fetch(`/api/categories/${cat.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: other.order }),
+      }),
+      fetch(`/api/categories/${other.id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: cat.order }),
+      }),
+    ]);
+    refetchCategories();
   }
 
   async function handleSubmit() {
@@ -399,7 +433,15 @@ export default function InputClient() {
 
       <div>
         <h2 className="text-lg font-semibold mb-3">Historique</h2>
-        <HistoryTable entries={allEntries} categories={categories} onEdit={handleHistoryEdit} onGroupChange={handleGroupChange} />
+        <HistoryTable
+          entries={allEntries}
+          categories={categories}
+          onEdit={handleHistoryEdit}
+          onGroupChange={handleGroupChange}
+          onDeleteRow={handleDeleteRow}
+          onReorder={handleReorder}
+          onDeleteAll={handleDeleteAllHistory}
+        />
       </div>
     </div>
   );
