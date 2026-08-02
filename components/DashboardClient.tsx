@@ -124,7 +124,7 @@ export default function DashboardClient() {
   const insights: Insight[] = useMemo(() => {
     const list: (Insight | null)[] = [
       savingsRateTrendInsight(monthTotals),
-      expenseConcentrationInsight(donutData, (current?.depenses ?? 0)),
+      expenseConcentrationInsight(donutData.map((d) => ({ category: d.name, amount: d.value })), (current?.depenses ?? 0)),
       cashflowStreakInsight(monthTotals),
     ];
     return list.filter((i): i is Insight => i !== null);
