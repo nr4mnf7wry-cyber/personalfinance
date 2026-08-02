@@ -18,6 +18,53 @@ model User {
 
   entries       MonthEntry[]
   transactions  Transaction[]
+  categories    Category[]
+  balances      MonthBalance[]
+}
+
+// Catégories entièrement personnalisables par utilisateur : chaque nouvel
+// utilisateur part de zéro (aucune catégorie créée par défaut). Elles sont
+// ajoutées/renommées/supprimées librement, ou créées automatiquement lors
+// d'un import Excel.
+model Category {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  group      String    // "revenus" | "fixes" | "variables" | "epargne"
+  name       String
+  order      Int       @default(0)
+
+  // Frais fixe actif seulement jusqu'à cette date (ex: fin d'un crédit) — au-delà,
+  // la catégorie n'apparaît plus dans le formulaire de saisie mensuelle.
+  expiresAt  DateTime?
+
+  // Catégorie spéciale "Investissement" : son montant génère/complète une Transaction
+  isInvestment Boolean @default(false)
+  // Catégorie spéciale "ajustement" : son montant est calculé automatiquement
+  // (solde début + revenus - dépenses - solde fin), plutôt que saisi manuellement
+  isAdjustment Boolean @default(false)
+
+  createdAt  DateTime  @default(now())
+
+  @@unique([userId, group, name])
+  @@index([userId, group])
+}
+
+// Solde du compte en banque en début et fin de mois — sert à calculer
+// automatiquement la catégorie d'ajustement (dépenses non trackées)
+model MonthBalance {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  year         Int
+  month        Int
+
+  startBalance Float?
+  endBalance   Float?
+
+  @@unique([userId, year, month])
 }
 
 // Une ligne = un poste (catégorie/sous-catégorie) pour un mois donné

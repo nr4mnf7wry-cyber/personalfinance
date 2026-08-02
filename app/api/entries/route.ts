@@ -65,12 +65,17 @@ export async function POST(req: Request) {
   }
   const { year, month, lines } = parsed.data;
 
+  // Récupère les flags des catégories de l'utilisateur (isInvestment, isAdjustment)
+  const categories = await prisma.category.findMany({ where: { userId } });
+  const categoryFlags = new Map(categories.map((c) => [`${c.group}:${c.name}`, c]));
+
   const results = [];
   for (const line of lines) {
     let transactionId: string | undefined;
+    const catInfo = categoryFlags.get(`${line.group}:${line.category}`);
 
-    // Catégorie "Investissement" -> crée/complète une transaction liée
-    if (line.category === "Investment" && line.investment) {
+    // Catégorie marquée "Investissement" -> crée/complète une transaction liée
+    if (catInfo?.isInvestment && line.investment) {
       const tx = await prisma.transaction.create({
         data: {
           userId,

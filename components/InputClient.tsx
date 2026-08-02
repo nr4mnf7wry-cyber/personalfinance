@@ -21,7 +21,7 @@ const GROUPS: Group[] = ["revenus", "fixes", "variables", "epargne"];
 export default function InputClient() {
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
-  const [detailed, setDetailed] = useState(false);
+  const [detailed, setDetailed] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [amounts, setAmounts] = useState<Record<string, number>>({});
   const [startBalance, setStartBalance] = useState<number | "">("");
@@ -174,6 +174,16 @@ export default function InputClient() {
       body: JSON.stringify({ [flag]: !cat[flag] }),
     });
     refetchCategories();
+  }
+
+  async function handleGroupChange(categoryId: string, newGroup: Group) {
+    await fetch(`/api/categories/${categoryId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group: newGroup }),
+    });
+    refetchCategories();
+    refetchAllEntries();
   }
 
   async function handleSubmit() {
@@ -382,7 +392,7 @@ export default function InputClient() {
 
       <div>
         <h2 className="text-lg font-semibold mb-3">Historique</h2>
-        <HistoryTable entries={allEntries} onEdit={handleHistoryEdit} />
+        <HistoryTable entries={allEntries} categories={categories} onEdit={handleHistoryEdit} onGroupChange={handleGroupChange} />
       </div>
     </div>
   );

@@ -24,6 +24,37 @@ export default function InvestmentsClient() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [prices, setPrices] = useState<Record<string, { price: number; changePercent: number } | null>>({});
   const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), ticker: "", label: "", quantity: "", unitPrice: "", sector: "" });
+  const [submitting, setSubmitting] = useState(false);
+
+  function refetchTransactions() {
+    return fetch("/api/investments").then((r) => r.json()).then(setTransactions);
+  }
+
+  async function handleAddTransaction(e: React.FormEvent) {
+    e.preventDefault();
+    if (!form.ticker || !form.quantity || !form.unitPrice) return;
+    setSubmitting(true);
+    const res = await fetch("/api/investments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: new Date(form.date).toISOString(),
+        ticker: form.ticker,
+        label: form.label || undefined,
+        quantity: Number(form.quantity),
+        unitPrice: Number(form.unitPrice),
+        sector: form.sector || undefined,
+      }),
+    });
+    setSubmitting(false);
+    if (res.ok) {
+      setForm({ date: new Date().toISOString().slice(0, 10), ticker: "", label: "", quantity: "", unitPrice: "", sector: "" });
+      setShowForm(false);
+      refetchTransactions();
+    }
+  }
 
   useEffect(() => {
     fetch("/api/investments")
@@ -93,6 +124,49 @@ export default function InvestmentsClient() {
   return (
     <div className="space-y-10">
       {/* Résumé */}
+      <div className="flex items-center justify-between">
+        <h2 className="text-lg font-semibold">Résumé</h2>
+        <button
+          onClick={() => setShowForm((s) => !s)}
+          className="text-sm bg-accent text-white rounded-lg px-4 py-2 font-medium"
+        >
+          {showForm ? "Annuler" : "+ Ajouter une transaction"}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleAddTransaction} className="card p-4 flex flex-wrap items-end gap-3">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Date</label>
+            <input type="date" value={form.date} onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm" required />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Ticker</label>
+            <input placeholder="MSFT" value={form.ticker} onChange={(e) => setForm((f) => ({ ...f, ticker: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-28" required />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Nom (optionnel)</label>
+            <input placeholder="Microsoft" value={form.label} onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-36" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Quantité</label>
+            <input type="number" step="0.0001" value={form.quantity} onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-24 text-right" required />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Prix unitaire</label>
+            <input type="number" step="0.01" value={form.unitPrice} onChange={(e) => setForm((f) => ({ ...f, unitPrice: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-28 text-right" required />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Secteur (optionnel)</label>
+            <input placeholder="Tech" value={form.sector} onChange={(e) => setForm((f) => ({ ...f, sector: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-28" />
+          </div>
+          <button type="submit" disabled={submitting} className="bg-accent text-white rounded-lg px-4 py-1.5 text-sm font-medium disabled:opacity-50">
+            {submitting ? "Ajout..." : "Ajouter"}
+          </button>
+        </form>
+      )}
+
+      {/* Chiffres clés */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="card p-5">
           <p className="text-sm text-gray-500">Valeur du portefeuille</p>

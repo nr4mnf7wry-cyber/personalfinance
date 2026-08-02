@@ -17,44 +17,9 @@ export const GROUP_COLORS: Record<Group, string> = {
   epargne: "#7048e8",
 };
 
-export const CATEGORIES: Record<Group, { category: string; subCategories?: string[] }[]> = {
-  revenus: [
-    { category: "Salary" },
-    { category: "Coaching" },
-    { category: "Referee" },
-    { category: "Other income" },
-  ],
-  fixes: [
-    { category: "Rent" },
-    { category: "Electricity" },
-    { category: "Gas" },
-    { category: "Water" },
-    { category: "Internet" },
-    { category: "Gym" },
-    { category: "Netflix" },
-    { category: "Phone" },
-    { category: "Music" },
-    { category: "Mutual" },
-    { category: "Car payment" },
-    { category: "Car insurance" },
-    { category: "Parking" },
-    { category: "Creche" },
-  ],
-  variables: [
-    { category: "Food" },
-    { category: "Car fuel" },
-    { category: "Clothes" },
-    { category: "Other expenses" },
-  ],
-  epargne: [
-    { category: "Reserve build" },
-    { category: "Investment" }, // catégorie spéciale, liée aux transactions boursières
-  ],
-};
-
-export const ALL_CATEGORIES = Object.entries(CATEGORIES).flatMap(([group, cats]) =>
-  cats.map((c) => ({ group: group as Group, ...c }))
-);
+export const CATEGORIES_HELP =
+  "Les catégories sont désormais propres à chaque utilisateur : gérées via /api/categories, " +
+  "créées à la main dans /input ou automatiquement lors d'un import Excel.";
 
 export const MONTH_LABELS = [
   "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
