@@ -93,6 +93,15 @@ export function sum(arr: number[]) {
   return arr.reduce((a, b) => a + b, 0);
 }
 
+// Exclut tout mois futur (au-delà du mois calendaire réel) — utilisé par toutes
+// les pages dashboard pour ne jamais afficher de données "prédites" comme réelles
+export function capToCurrentMonth(entries: Entry[]): Entry[] {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  return entries.filter((e) => e.year < y || (e.year === y && e.month <= m));
+}
+
 // Compare un mois donné au même mois de l'année précédente, par catégorie
 export function yoyByCategory(entries: Entry[], year: number, month: number) {
   const current = entries.filter((e) => e.year === year && e.month === month);

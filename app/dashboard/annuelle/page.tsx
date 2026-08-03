@@ -1,9 +1,9 @@
 import Nav from "@/components/Nav";
 import { BlurProvider, BlurToggleButton } from "@/components/BlurToggle";
 import DashboardTabs from "@/components/DashboardTabs";
-import DashboardGeneral from "@/components/DashboardGeneral";
+import DashboardAnnual from "@/components/DashboardAnnual";
 
-export default function DashboardPage() {
+export default function DashboardAnnualPage() {
   return (
     <BlurProvider>
       <Nav />
@@ -13,7 +13,7 @@ export default function DashboardPage() {
           <BlurToggleButton />
         </div>
         <DashboardTabs />
-        <DashboardGeneral />
+        <DashboardAnnual />
       </main>
     </BlurProvider>
   );
