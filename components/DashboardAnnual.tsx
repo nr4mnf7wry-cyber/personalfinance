@@ -10,23 +10,30 @@ import StatTile from "@/components/StatTile";
 import { Money } from "@/components/BlurToggle";
 import { GROUP_COLORS, MONTH_LABELS } from "@/lib/categories";
 import {
-  Entry, computeMonthTotals, movingAverage, yearTotals, ytdCumulative, capToCurrentMonth, sum,
+  Entry, computeMonthTotals, movingAverage, yearTotals, ytdCumulative, capToCurrentMonth, sum, Balance,
 } from "@/lib/aggregate";
 
 const now = new Date();
 const CURRENT_YEAR = now.getFullYear();
+const CURRENT_MONTH = now.getMonth() + 1;
 
 export default function DashboardAnnual() {
   const [entriesRaw, setEntriesRaw] = useState<Entry[]>([]);
+  const [balances, setBalances] = useState<Balance[]>([]);
   const [loading, setLoading] = useState(true);
   const [selYear, setSelYear] = useState(CURRENT_YEAR);
 
   useEffect(() => {
     fetch("/api/entries").then((r) => r.json()).then((data) => { setEntriesRaw(data); setLoading(false); });
+    fetch("/api/balances").then((r) => r.json()).then(setBalances);
   }, []);
 
   const entries = useMemo(() => capToCurrentMonth(entriesRaw), [entriesRaw]);
-  const monthTotals = useMemo(() => computeMonthTotals(entries), [entries]);
+  const balancesCapped = useMemo(
+    () => balances.filter((b) => b.year < CURRENT_YEAR || (b.year === CURRENT_YEAR && b.month <= CURRENT_MONTH)),
+    [balances]
+  );
+  const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped), [entries, balancesCapped]);
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
 
   const yearMonths = useMemo(

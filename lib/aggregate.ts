@@ -20,11 +20,19 @@ export type MonthTotals = {
   savingsRate: number; // epargne / revenus, en %
 };
 
+export type Balance = { year: number; month: number; startBalance: number | null; endBalance: number | null };
+
 export function monthKey(year: number, month: number) {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
-export function computeMonthTotals(entries: Entry[]): MonthTotals[] {
+// L'épargne réelle d'un mois = ce qu'il reste effectivement en banque en plus
+// (solde fin - solde début), et non la somme des catégories "épargne" saisies
+// (qui ne reflètent que ce qui a été catégorisé, pas la réalité du compte).
+// Si aucun solde n'est renseigné pour le mois, on retombe sur l'ancien calcul
+// (somme des catégories du groupe "epargne") pour ne pas casser l'historique
+// importé avant la mise en place du suivi de solde.
+export function computeMonthTotals(entries: Entry[], balances: Balance[] = []): MonthTotals[] {
   const groups = new Map<string, MonthTotals>();
 
   for (const e of entries) {
@@ -40,9 +48,18 @@ export function computeMonthTotals(entries: Entry[]): MonthTotals[] {
     t[e.group] += e.amount;
   }
 
+  const balanceMap = new Map(balances.map((b) => [monthKey(b.year, b.month), b]));
+
   const result = Array.from(groups.values()).map((t) => {
     t.depenses = t.fixes + t.variables;
     t.net = t.revenus - t.depenses;
+
+    const b = balanceMap.get(monthKey(t.year, t.month));
+    if (b && b.startBalance != null && b.endBalance != null) {
+      t.epargne = b.endBalance - b.startBalance;
+    }
+    // sinon : t.epargne reste la somme des catégories "epargne" (calculée plus haut)
+
     t.savingsRate = t.revenus > 0 ? (t.epargne / t.revenus) * 100 : 0;
     return t;
   });

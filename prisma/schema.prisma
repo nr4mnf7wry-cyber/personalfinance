@@ -20,6 +20,7 @@ model User {
   transactions  Transaction[]
   categories    Category[]
   balances      MonthBalance[]
+  privateInvestments PrivateInvestment[]
 }
 
 // Catégories entièrement personnalisables par utilisateur : chaque nouvel
@@ -112,4 +113,37 @@ model Transaction {
   createdAt   DateTime   @default(now())
 
   @@index([userId, ticker])
+}
+
+// Investissement non coté (immobilier, prêt privé, parts d'entreprise, crypto non
+// trackée...) : pas de cours en direct, donc valorisation manuelle périodique.
+model PrivateInvestment {
+  id                String    @id @default(cuid())
+  userId            String
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name              String    // ex: "Prêt à Marc", "Parts SCI Dupont", "Local commercial"
+  amountInvested    Float     // capital initialement engagé
+  currency          String    @default("EUR")
+  startDate         DateTime
+  expectedReturnPct Float?    // rendement annuel attendu, en % (optionnel)
+  notes             String?
+
+  valuations        PrivateInvestmentValuation[]
+  createdAt         DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Historique des réévaluations manuelles ("combien je pense pouvoir en retirer aujourd'hui")
+model PrivateInvestmentValuation {
+  id           String            @id @default(cuid())
+  investmentId String
+  investment   PrivateInvestment @relation(fields: [investmentId], references: [id], onDelete: Cascade)
+
+  date            DateTime @default(now())
+  estimatedValue  Float    // valeur estimée à cette date
+  note            String?
+
+  @@index([investmentId])
 }

@@ -4,15 +4,14 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  LineChart, Line,
+  AreaChart, Area,
 } from "recharts";
 import Link from "next/link";
 import StatTile from "@/components/StatTile";
 import { Money } from "@/components/BlurToggle";
 import { GROUP_COLORS, MONTH_LABELS } from "@/lib/categories";
-import {
-  Entry, computeMonthTotals, computeRunningBalance, yearTotals, capToCurrentMonth,
-} from "@/lib/aggregate";
+import { Entry, computeMonthTotals, yearTotals, capToCurrentMonth, Balance } from "@/lib/aggregate";
+import { computeWealthEvolution } from "@/lib/wealth";
 import { savingsRateTrendInsight, expenseConcentrationInsight, cashflowStreakInsight, Insight } from "@/lib/insights";
 
 const now = new Date();
@@ -22,44 +21,38 @@ const WEALTH_COLORS = ["#1971c2", "#7048e8"];
 
 export default function DashboardGeneral() {
   const [entriesRaw, setEntriesRaw] = useState<Entry[]>([]);
-  const [liquidBalance, setLiquidBalance] = useState<number | null>(null);
-  const [investedCapital, setInvestedCapital] = useState<number | null>(null);
+  const [balances, setBalances] = useState<Balance[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [privateInvestments, setPrivateInvestments] = useState<any[]>([]);
+  const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/entries")
-      .then((r) => r.json())
-      .then((data) => { setEntriesRaw(data); setLoading(false); });
-
-    fetch(`/api/balances?year=${CURRENT_YEAR}`)
-      .then((r) => r.json())
-      .then((balances: any[]) => {
-        const valid = balances.filter((b) => b.month <= CURRENT_MONTH && b.endBalance != null);
-        const latest = valid.sort((a, b) => b.month - a.month)[0];
-        setLiquidBalance(latest?.endBalance ?? null);
-      });
-
-    fetch("/api/investments")
-      .then((r) => r.json())
-      .then(async (txs: any[]) => {
-        const currencies = Array.from(new Set(txs.map((t) => t.currency).filter((c: string) => c && c !== "EUR")));
-        const rateEntries = await Promise.all(
-          currencies.map((c) =>
-            fetch(`/api/exchange-rate?from=${c}&to=EUR`).then((r) => (r.ok ? r.json() : { rate: 1 })).then((d) => [c, d.rate ?? 1])
-          )
-        );
-        const rates: Record<string, number> = { EUR: 1, ...Object.fromEntries(rateEntries) };
-        const net = txs.reduce((s, t) => {
-          const signed = t.type === "vente" ? -t.amount : t.amount;
-          return s + signed * (rates[t.currency] ?? 1);
-        }, 0);
-        setInvestedCapital(net);
-      });
+    fetch("/api/entries").then((r) => r.json()).then((data) => { setEntriesRaw(data); setLoading(false); });
+    fetch("/api/balances").then((r) => r.json()).then(setBalances);
+    fetch("/api/investments").then((r) => r.json()).then(setTransactions);
+    fetch("/api/private-investments").then((r) => r.json()).then(setPrivateInvestments);
   }, []);
 
+  // Taux de change pour toutes les devises utilisées par les transactions cotées
+  useEffect(() => {
+    const currencies = new Set(transactions.map((t) => t.currency).filter((c: string) => c && c !== "EUR"));
+    currencies.forEach((c) => {
+      if (rates[c] !== undefined) return;
+      fetch(`/api/exchange-rate?from=${c}&to=EUR`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => setRates((prev) => ({ ...prev, [c]: data?.rate ?? 1 })))
+        .catch(() => setRates((prev) => ({ ...prev, [c]: 1 })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions]);
+
   const entries = useMemo(() => capToCurrentMonth(entriesRaw), [entriesRaw]);
-  const monthTotals = useMemo(() => computeMonthTotals(entries), [entries]);
-  const withBalance = useMemo(() => computeRunningBalance(monthTotals), [monthTotals]);
+  const balancesCapped = useMemo(
+    () => balances.filter((b) => b.year < CURRENT_YEAR || (b.year === CURRENT_YEAR && b.month <= CURRENT_MONTH)),
+    [balances]
+  );
+  const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped), [entries, balancesCapped]);
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
 
   const current = monthTotals.find((t) => t.year === CURRENT_YEAR && t.month === CURRENT_MONTH);
@@ -76,6 +69,37 @@ export default function DashboardGeneral() {
     [years, monthTotals]
   );
 
+  // Investissements cotés : capital net investi (coût d'acquisition, converti EUR)
+  const listedInvestedCapital = useMemo(() => {
+    return transactions.reduce((s, t) => {
+      const signed = t.type === "vente" ? -t.amount : t.amount;
+      return s + signed * (rates[t.currency] ?? 1);
+    }, 0);
+  }, [transactions, rates]);
+
+  // Investissements non cotés : dernière valeur estimée connue pour chacun
+  const privateInvestedValue = useMemo(() => {
+    return privateInvestments.reduce((s, inv) => {
+      const last = [...(inv.valuations ?? [])].sort((a: any, b: any) => a.date.localeCompare(b.date)).pop();
+      const value = last?.estimatedValue ?? inv.amountInvested;
+      return s + value * (rates[inv.currency] ?? 1);
+    }, 0);
+  }, [privateInvestments, rates]);
+
+  const investedCapital = listedInvestedCapital + privateInvestedValue;
+
+  const liquidBalance = useMemo(() => {
+    const valid = balancesCapped.filter((b) => b.endBalance != null);
+    const latest = [...valid].sort((a, b) => (a.year - b.year) || (a.month - b.month)).pop();
+    return latest?.endBalance ?? null;
+  }, [balancesCapped]);
+
+  // Évolution du patrimoine total (liquidités + investissements cotés, mois par mois)
+  const wealthSeries = useMemo(
+    () => computeWealthEvolution(balancesCapped, transactions, rates),
+    [balancesCapped, transactions, rates]
+  );
+
   const insights: Insight[] = useMemo(() => {
     const list: (Insight | null)[] = [
       savingsRateTrendInsight(monthTotals),
@@ -85,10 +109,10 @@ export default function DashboardGeneral() {
     return list.filter((i): i is Insight => i !== null);
   }, [monthTotals, donutData, current]);
 
-  const totalWealth = (liquidBalance ?? 0) + (investedCapital ?? 0);
+  const totalWealth = (liquidBalance ?? 0) + investedCapital;
   const wealthAllocation = [
     { name: "Liquidités", value: Math.max(liquidBalance ?? 0, 0) },
-    { name: "Investissements", value: Math.max(investedCapital ?? 0, 0) },
+    { name: "Investissements", value: Math.max(investedCapital, 0) },
   ].filter((w) => w.value > 0);
 
   if (loading) return <p className="text-gray-500">Chargement...</p>;
@@ -111,7 +135,7 @@ export default function DashboardGeneral() {
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatTile label="Patrimoine total" value={totalWealth} />
-          <StatTile label="Solde net du mois" value={current?.net ?? 0} />
+          <StatTile label="Épargne du mois (solde réel)" value={current?.epargne ?? 0} />
           <StatTile label="Taux d'épargne" value={current?.savingsRate ?? 0} isCurrency={false} />
           <StatTile label="Revenus du mois" value={current?.revenus ?? 0} />
         </div>
@@ -131,13 +155,35 @@ export default function DashboardGeneral() {
       {/* Patrimoine */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Patrimoine</h2>
+
+        <div className="card p-4">
+          <p className="text-sm text-gray-500 mb-2">Évolution du patrimoine (liquidités + investissements)</p>
+          {wealthSeries.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={wealthSeries.map((w) => ({ label: `${MONTH_LABELS[w.month - 1].slice(0, 3)} ${w.year}`, Liquidités: w.liquid, Investissements: w.invested }))}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+                <Legend />
+                <Area type="monotone" dataKey="Liquidités" stackId="1" stroke={WEALTH_COLORS[0]} fill={WEALTH_COLORS[0]} fillOpacity={0.5} />
+                <Area type="monotone" dataKey="Investissements" stackId="1" stroke={WEALTH_COLORS[1]} fill={WEALTH_COLORS[1]} fillOpacity={0.5} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-sm text-gray-400 py-10 text-center">
+              Renseigne un solde de fin de mois dans /input pour voir cette évolution se construire.
+            </p>
+          )}
+        </div>
+
         <div className="grid md:grid-cols-2 gap-6">
           <div className="card p-4">
-            <p className="text-sm text-gray-500 mb-2">Répartition liquidités / investissements</p>
+            <p className="text-sm text-gray-500 mb-2">Répartition actuelle</p>
             {wealthAllocation.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240}>
+              <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
-                  <Pie data={wealthAllocation} dataKey="value" nameKey="name" innerRadius={55} outerRadius={95}>
+                  <Pie data={wealthAllocation} dataKey="value" nameKey="name" innerRadius={50} outerRadius={85}>
                     {wealthAllocation.map((_, i) => <Cell key={i} fill={WEALTH_COLORS[i % WEALTH_COLORS.length]} />)}
                   </Pie>
                   <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
@@ -145,32 +191,22 @@ export default function DashboardGeneral() {
                 </PieChart>
               </ResponsiveContainer>
             ) : (
-              <p className="text-sm text-gray-400 py-10 text-center">
-                Renseigne un solde de fin de mois dans /input et/ou une transaction dans /investments.
-              </p>
+              <p className="text-sm text-gray-400 py-10 text-center">Pas encore de données.</p>
             )}
           </div>
-          <div className="card p-4">
-            <p className="text-sm text-gray-500 mb-2">Solde net cumulé dans le temps</p>
-            <ResponsiveContainer width="100%" height={240}>
-              <LineChart data={withBalance.map((t) => ({ label: `${MONTH_LABELS[t.month - 1].slice(0, 3)} ${t.year}`, balance: t.runningBalance }))}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
-                <Line type="monotone" dataKey="balance" stroke="#1971c2" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
+          <div className="card p-6 flex flex-col justify-center gap-4">
+            <div>
+              <p className="text-sm text-gray-500">Investissements cotés (actions, ETF)</p>
+              <p className="text-xl font-semibold"><Money value={listedInvestedCapital} /></p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Investissements non cotés (immobilier, prêts...)</p>
+              <p className="text-xl font-semibold"><Money value={privateInvestedValue} /></p>
+            </div>
+            <Link href="/investments" className="text-accent text-sm font-medium">
+              Voir le détail →
+            </Link>
           </div>
-        </div>
-        <div className="card p-6 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-500">Capital investi (coût d'acquisition, converti EUR)</p>
-            <p className="text-2xl font-semibold"><Money value={investedCapital ?? 0} /></p>
-          </div>
-          <Link href="/investments" className="text-accent text-sm font-medium">
-            Voir le portefeuille en détail →
-          </Link>
         </div>
       </section>
 

@@ -95,7 +95,8 @@ export default function InputClient() {
       fetch(`/api/entries?year=${year}&month=${month}`).then((r) => r.json()),
       fetch(`/api/entries?year=${prevYear}&month=${prevMonth}`).then((r) => r.json()),
       fetch(`/api/balances?year=${year}&month=${month}`).then((r) => r.json()),
-    ]).then(([currentData, prevData, balanceData]: [any[], any[], any[]]) => {
+      fetch(`/api/balances?year=${prevYear}&month=${prevMonth}`).then((r) => r.json()),
+    ]).then(([currentData, prevData, balanceData, prevBalanceData]: [any[], any[], any[], any[]]) => {
       const map: Record<string, number> = {};
       for (const c of categories) {
         const own = currentData.find((e) => e.category === c.name && e.group === c.group && !e.subCategory);
@@ -112,8 +113,12 @@ export default function InputClient() {
         }
       }
       setAmounts(map);
+
       const b = balanceData[0];
-      setStartBalance(b?.startBalance ?? "");
+      const prevB = prevBalanceData[0];
+      // le solde de fin du mois précédent devient le solde de début de ce mois-ci,
+      // sauf si ce mois a déjà son propre solde de début explicitement saisi
+      setStartBalance(b?.startBalance ?? prevB?.endBalance ?? "");
       setEndBalance(b?.endBalance ?? "");
       // laisse React appliquer les nouveaux states avant d'activer l'auto-save,
       // pour ne pas déclencher une sauvegarde sur les anciennes valeurs
