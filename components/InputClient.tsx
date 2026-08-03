@@ -31,8 +31,8 @@ export default function InputClient() {
   const [investQty, setInvestQty] = useState<number | "">("");
   const [investPrice, setInvestPrice] = useState<number | "">("");
   const [investCurrency, setInvestCurrency] = useState("EUR");
-  const [saving, setSaving] = useState(false);
-  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [ready, setReady] = useState(false); // true une fois le préremplissage du mois terminé (évite un auto-save prématuré)
   const [allEntries, setAllEntries] = useState<any[]>([]);
   const [newCatName, setNewCatName] = useState<Record<Group, string>>({ revenus: "", fixes: "", variables: "", epargne: "" });
   const [newCatExpiry, setNewCatExpiry] = useState<Record<Group, string>>({ revenus: "", fixes: "", variables: "", epargne: "" });
@@ -87,13 +87,15 @@ export default function InputClient() {
 
   useEffect(() => {
     if (categories.length === 0) return;
+    setReady(false);
     const prevYear = month === 1 ? year - 1 : year;
     const prevMonth = month === 1 ? 12 : month - 1;
 
     Promise.all([
       fetch(`/api/entries?year=${year}&month=${month}`).then((r) => r.json()),
       fetch(`/api/entries?year=${prevYear}&month=${prevMonth}`).then((r) => r.json()),
-    ]).then(([currentData, prevData]: [any[], any[]]) => {
+      fetch(`/api/balances?year=${year}&month=${month}`).then((r) => r.json()),
+    ]).then(([currentData, prevData, balanceData]: [any[], any[], any[]]) => {
       const map: Record<string, number> = {};
       for (const c of categories) {
         const own = currentData.find((e) => e.category === c.name && e.group === c.group && !e.subCategory);
@@ -110,15 +112,13 @@ export default function InputClient() {
         }
       }
       setAmounts(map);
+      const b = balanceData[0];
+      setStartBalance(b?.startBalance ?? "");
+      setEndBalance(b?.endBalance ?? "");
+      // laisse React appliquer les nouveaux states avant d'activer l'auto-save,
+      // pour ne pas déclencher une sauvegarde sur les anciennes valeurs
+      setTimeout(() => setReady(true), 0);
     });
-
-    fetch(`/api/balances?year=${year}&month=${month}`)
-      .then((r) => r.json())
-      .then((data: any[]) => {
-        const b = data[0];
-        setStartBalance(b?.startBalance ?? "");
-        setEndBalance(b?.endBalance ?? "");
-      });
   }, [year, month, categories.length]);
 
   const rawTotals = useMemo(() => {
@@ -143,6 +143,48 @@ export default function InputClient() {
     if (adjustmentCategory) t[adjustmentCategory.group] += adjustmentAmount;
     return t;
   }, [rawTotals, adjustmentCategory, adjustmentAmount]);
+
+  async function saveNow() {
+    const lines: any[] = activeCategories.map((c) => ({
+      group: c.group,
+      category: c.name,
+      subCategory: null,
+      amount: c.isAdjustment ? adjustmentAmount : Math.round((amounts[c.id] ?? 0) * 100) / 100,
+      ...(c.isInvestment && investTicker && investQty && investPrice
+        ? { investment: { ticker: investTicker, quantity: Number(investQty), unitPrice: Number(investPrice), currency: investCurrency } }
+        : {}),
+    }));
+
+    const [entriesRes] = await Promise.all([
+      fetch("/api/entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ year, month, lines }),
+      }),
+      fetch("/api/balances", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          year, month,
+          startBalance: startBalance === "" ? null : Number(startBalance),
+          endBalance: endBalance === "" ? null : Number(endBalance),
+        }),
+      }),
+    ]);
+
+    setSaveStatus(entriesRes.ok ? "saved" : "idle");
+    if (entriesRes.ok) refetchAllEntries();
+  }
+
+  // Auto-sauvegarde : dès qu'un montant, le solde ou les infos d'investissement changent,
+  // on enregistre automatiquement après une courte pause (pas de bouton à cliquer)
+  useEffect(() => {
+    if (!ready) return;
+    setSaveStatus("saving");
+    const t = setTimeout(() => { saveNow(); }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amounts, startBalance, endBalance, investTicker, investQty, investPrice, investCurrency, adjustmentAmount, ready]);
 
   async function handleAddCategory(group: Group) {
     const name = newCatName[group].trim();
@@ -230,46 +272,6 @@ export default function InputClient() {
       }),
     ]);
     refetchCategories();
-  }
-
-  async function handleSubmit() {
-    setSaving(true);
-    setSavedMsg(null);
-
-    const lines: any[] = activeCategories.map((c) => ({
-      group: c.group,
-      category: c.name,
-      subCategory: null,
-      amount: c.isAdjustment ? adjustmentAmount : Math.round((amounts[c.id] ?? 0) * 100) / 100,
-      ...(c.isInvestment && investTicker && investQty && investPrice
-        ? { investment: { ticker: investTicker, quantity: Number(investQty), unitPrice: Number(investPrice), currency: investCurrency } }
-        : {}),
-    }));
-
-    const [entriesRes] = await Promise.all([
-      fetch("/api/entries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ year, month, lines }),
-      }),
-      fetch("/api/balances", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          year, month,
-          startBalance: startBalance === "" ? null : Number(startBalance),
-          endBalance: endBalance === "" ? null : Number(endBalance),
-        }),
-      }),
-    ]);
-
-    setSaving(false);
-    if (entriesRes.ok) {
-      setSavedMsg("Mois enregistré ✅");
-      refetchAllEntries();
-    } else {
-      setSavedMsg("Erreur lors de l'enregistrement");
-    }
   }
 
   return (
@@ -434,11 +436,9 @@ export default function InputClient() {
           ))
         )}
 
-        <div className="flex items-center gap-4 pt-2">
-          <button onClick={handleSubmit} disabled={saving} className="bg-accent text-white rounded-lg px-5 py-2 font-medium disabled:opacity-50">
-            {saving ? "Enregistrement..." : "Enregistrer le mois"}
-          </button>
-          {savedMsg && <span className="text-sm text-gray-600">{savedMsg}</span>}
+        <div className="flex items-center gap-2 pt-2 text-sm text-gray-400">
+          {saveStatus === "saving" && <span>Enregistrement...</span>}
+          {saveStatus === "saved" && <span className="text-green">✓ Enregistré automatiquement</span>}
         </div>
       </div>
 
