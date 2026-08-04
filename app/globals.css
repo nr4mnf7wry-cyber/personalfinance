@@ -3,20 +3,22 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f7f8fa;
+  --bg: #f8f8f6;
   --surface: #ffffff;
-  --border: #e5e7eb;
-  --text: #12161c;
-  --text-muted: #6b7280;
-  --accent: #1971c2;
-  --green: #2f9e44;
-  --red: #e03131;
+  --border: #e6e4de;
+  --text: #12233f;
+  --text-muted: #5b6b82;
+  --accent: #a8823c;
+  --ink: #12233f;
+  --green: #2f6f52;
+  --red: #9b3b3b;
 }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Toggle "flouter les chiffres" : appliqué sur un ancêtre .blur-numbers,
@@ -33,5 +35,6 @@ body {
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(18, 35, 63, 0.03);
 }

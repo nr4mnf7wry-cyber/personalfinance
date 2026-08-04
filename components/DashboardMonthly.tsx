@@ -16,7 +16,9 @@ import {
 const now = new Date();
 const CURRENT_YEAR = now.getFullYear();
 const CURRENT_MONTH = now.getMonth() + 1;
-const CATEGORY_COLORS = ["#1971c2", "#e8590c", "#2f9e44", "#7048e8", "#e03131", "#f08c00", "#0ca678", "#495057"];
+import { CATEGORICAL_PALETTE, SLATE, GOLD } from "@/lib/theme";
+
+const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", boxShadow: "0 4px 16px rgba(18,35,63,0.08)" };
 
 export default function DashboardMonthly() {
   const [entriesRaw, setEntriesRaw] = useState<Entry[]>([]);
@@ -90,9 +92,9 @@ export default function DashboardMonthly() {
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie data={donutData} dataKey="value" nameKey="name" innerRadius={60} outerRadius={100}>
-                  {donutData.map((_, i) => <Cell key={i} fill={CATEGORY_COLORS[i % CATEGORY_COLORS.length]} />)}
+                  {donutData.map((_, i) => <Cell key={i} fill={CATEGORICAL_PALETTE[i % CATEGORICAL_PALETTE.length]} />)}
                 </Pie>
-                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
                 <Legend />
               </PieChart>
             </ResponsiveContainer>
@@ -112,15 +114,15 @@ export default function DashboardMonthly() {
         </div>
         <div className="card p-4">
           <p className="text-sm text-gray-500 mb-2">Revenus / Dépenses / Épargne</p>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={[{ label: "Mois", Revenus: current?.revenus ?? 0, Dépenses: current?.depenses ?? 0, Épargne: current?.epargne ?? 0 }]} layout="vertical">
-              <XAxis type="number" />
-              <YAxis type="category" dataKey="label" hide />
-              <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={[{ label: MONTH_LABELS[selMonth - 1].slice(0, 3), Revenus: current?.revenus ?? 0, Dépenses: current?.depenses ?? 0, Épargne: current?.epargne ?? 0 }]} barGap={8}>
+              <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
               <Legend />
-              <Bar dataKey="Revenus" stackId="a" fill={GROUP_COLORS.revenus} />
-              <Bar dataKey="Dépenses" stackId="a" fill={GROUP_COLORS.fixes} />
-              <Bar dataKey="Épargne" stackId="a" fill={GROUP_COLORS.epargne} />
+              <Bar dataKey="Revenus" fill={GROUP_COLORS.revenus} radius={[4, 4, 0, 0]} maxBarSize={64} />
+              <Bar dataKey="Dépenses" fill={GROUP_COLORS.fixes} radius={[4, 4, 0, 0]} maxBarSize={64} />
+              <Bar dataKey="Épargne" fill={GROUP_COLORS.epargne} radius={[4, 4, 0, 0]} maxBarSize={64} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -134,10 +136,10 @@ export default function DashboardMonthly() {
               <BarChart data={yoyData}>
                 <XAxis dataKey="category" tick={{ fontSize: 9 }} interval={0} angle={-30} textAnchor="end" height={70} />
                 <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
                 <Legend />
-                <Bar dataKey="previous" name={`${selYear - 1}`} fill="#adb5bd" />
-                <Bar dataKey="current" name={`${selYear}`} fill="#1971c2" />
+                <Bar dataKey="previous" name={`${selYear - 1}`} fill={SLATE} radius={[3, 3, 0, 0]} />
+                <Bar dataKey="current" name={`${selYear}`} fill={GOLD} radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>

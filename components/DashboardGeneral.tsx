@@ -13,11 +13,13 @@ import { GROUP_COLORS, MONTH_LABELS } from "@/lib/categories";
 import { Entry, computeMonthTotals, yearTotals, capToCurrentMonth, Balance } from "@/lib/aggregate";
 import { computeWealthEvolution } from "@/lib/wealth";
 import { savingsRateTrendInsight, expenseConcentrationInsight, cashflowStreakInsight, Insight } from "@/lib/insights";
+import { WEALTH_PALETTE } from "@/lib/theme";
 
 const now = new Date();
 const CURRENT_YEAR = now.getFullYear();
 const CURRENT_MONTH = now.getMonth() + 1;
-const WEALTH_COLORS = ["#1971c2", "#7048e8"];
+const WEALTH_COLORS = WEALTH_PALETTE;
+const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", boxShadow: "0 4px 16px rgba(18,35,63,0.08)" };
 
 export default function DashboardGeneral() {
   const [entriesRaw, setEntriesRaw] = useState<Entry[]>([]);
@@ -55,11 +57,16 @@ export default function DashboardGeneral() {
   const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped), [entries, balancesCapped]);
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
 
-  const current = monthTotals.find((t) => t.year === CURRENT_YEAR && t.month === CURRENT_MONTH);
+  // Le résumé exécutif s'appuie sur le dernier mois CLOS (mois précédent) : le mois en
+  // cours est presque toujours incomplet (solde de fin pas encore connu, etc.)
+  const prevMonth = CURRENT_MONTH === 1 ? 12 : CURRENT_MONTH - 1;
+  const prevYear = CURRENT_MONTH === 1 ? CURRENT_YEAR - 1 : CURRENT_YEAR;
+  const lastClosed = monthTotals.find((t) => t.year === prevYear && t.month === prevMonth);
+
   const donutData = useMemo(() => {
-    const rows = entries.filter((e) => e.year === CURRENT_YEAR && e.month === CURRENT_MONTH && (e.group === "fixes" || e.group === "variables"));
+    const rows = entries.filter((e) => e.year === prevYear && e.month === prevMonth && (e.group === "fixes" || e.group === "variables"));
     return rows.map((r) => ({ name: r.category, value: r.amount }));
-  }, [entries]);
+  }, [entries, prevYear, prevMonth]);
 
   const annualData = useMemo(
     () => years.map((y) => {
@@ -103,11 +110,11 @@ export default function DashboardGeneral() {
   const insights: Insight[] = useMemo(() => {
     const list: (Insight | null)[] = [
       savingsRateTrendInsight(monthTotals),
-      expenseConcentrationInsight(donutData.map((d) => ({ category: d.name, amount: d.value })), current?.depenses ?? 0),
+      expenseConcentrationInsight(donutData.map((d) => ({ category: d.name, amount: d.value })), lastClosed?.depenses ?? 0),
       cashflowStreakInsight(monthTotals),
     ];
     return list.filter((i): i is Insight => i !== null);
-  }, [monthTotals, donutData, current]);
+  }, [monthTotals, donutData]);
 
   const totalWealth = (liquidBalance ?? 0) + investedCapital;
   const wealthAllocation = [
@@ -130,14 +137,16 @@ export default function DashboardGeneral() {
       <section className="space-y-4">
         <div>
           <h2 className="text-lg font-semibold">Résumé exécutif</h2>
-          <p className="text-sm text-gray-400">Situation au {MONTH_LABELS[CURRENT_MONTH - 1]} {CURRENT_YEAR}</p>
+          <p className="text-sm text-gray-400">
+            Patrimoine à aujourd'hui · reste sur {MONTH_LABELS[prevMonth - 1]} {prevYear} (dernier mois clos)
+          </p>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatTile label="Patrimoine total" value={totalWealth} />
-          <StatTile label="Épargne du mois (solde réel)" value={current?.epargne ?? 0} />
-          <StatTile label="Taux d'épargne" value={current?.savingsRate ?? 0} isCurrency={false} />
-          <StatTile label="Revenus du mois" value={current?.revenus ?? 0} />
+          <StatTile label={`Épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.epargne ?? 0} />
+          <StatTile label={`Taux d'épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.savingsRate ?? 0} isCurrency={false} />
+          <StatTile label={`Revenus — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.revenus ?? 0} />
         </div>
 
         {insights.length > 0 && (
@@ -164,7 +173,7 @@ export default function DashboardGeneral() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
                 <Legend />
                 <Area type="monotone" dataKey="Liquidités" stackId="1" stroke={WEALTH_COLORS[0]} fill={WEALTH_COLORS[0]} fillOpacity={0.5} />
                 <Area type="monotone" dataKey="Investissements" stackId="1" stroke={WEALTH_COLORS[1]} fill={WEALTH_COLORS[1]} fillOpacity={0.5} />
@@ -186,7 +195,7 @@ export default function DashboardGeneral() {
                   <Pie data={wealthAllocation} dataKey="value" nameKey="name" innerRadius={50} outerRadius={85}>
                     {wealthAllocation.map((_, i) => <Cell key={i} fill={WEALTH_COLORS[i % WEALTH_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+                  <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
@@ -219,11 +228,11 @@ export default function DashboardGeneral() {
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
               <XAxis dataKey="year" />
               <YAxis tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+              <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
               <Legend />
-              <Bar dataKey="Revenus" fill={GROUP_COLORS.revenus} />
-              <Bar dataKey="Dépenses" fill={GROUP_COLORS.fixes} />
-              <Bar dataKey="Épargne" fill={GROUP_COLORS.epargne} />
+              <Bar dataKey="Revenus" fill={GROUP_COLORS.revenus} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Dépenses" fill={GROUP_COLORS.fixes} radius={[4, 4, 0, 0]} />
+              <Bar dataKey="Épargne" fill={GROUP_COLORS.epargne} radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

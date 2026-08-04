@@ -20,7 +20,7 @@ type Transaction = {
   sector?: string;
 };
 
-const COLORS = ["#1971c2", "#e8590c", "#2f9e44", "#7048e8", "#e03131", "#f08c00", "#0ca678", "#495057"];
+import { CATEGORICAL_PALETTE as COLORS, GOLD } from "@/lib/theme";
 const CURRENCIES = ["EUR", "USD", "GBP", "CHF"];
 
 const emptyForm = { date: new Date().toISOString().slice(0, 10), ticker: "", label: "", type: "achat" as "achat" | "vente", quantity: "", unitPrice: "", currency: "EUR", sector: "" };
@@ -348,7 +348,7 @@ export default function InvestmentsClient() {
               <XAxis dataKey="label" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} />
               <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
-              <Line type="monotone" dataKey="value" stroke="#7048e8" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="value" stroke={GOLD} strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>

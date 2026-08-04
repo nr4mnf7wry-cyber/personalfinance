@@ -5,9 +5,10 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        accent: "#1971c2",
-        green: "#2f9e44",
-        red: "#e03131",
+        accent: "#a8823c",
+        ink: "#12233f",
+        green: "#2f6f52",
+        red: "#9b3b3b",
       },
     },
   },

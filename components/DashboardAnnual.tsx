@@ -12,6 +12,9 @@ import { GROUP_COLORS, MONTH_LABELS } from "@/lib/categories";
 import {
   Entry, computeMonthTotals, movingAverage, yearTotals, ytdCumulative, capToCurrentMonth, sum, Balance,
 } from "@/lib/aggregate";
+import { INK, GOLD, SLATE } from "@/lib/theme";
+
+const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", boxShadow: "0 4px 16px rgba(18,35,63,0.08)" };
 
 const now = new Date();
 const CURRENT_YEAR = now.getFullYear();
@@ -65,8 +68,8 @@ export default function DashboardAnnual() {
     }));
   }, [yearMonths]);
 
-  const ytdCurrent = useMemo(() => ytdCumulative(monthTotals, selYear), [monthTotals, selYear]);
-  const ytdPrevious = useMemo(() => ytdCumulative(monthTotals, selYear - 1), [monthTotals, selYear]);
+  const ytdCurrent = useMemo(() => ytdCumulative(monthTotals, selYear, "epargne"), [monthTotals, selYear]);
+  const ytdPrevious = useMemo(() => ytdCumulative(monthTotals, selYear - 1, "epargne"), [monthTotals, selYear]);
   const ytdCombined = MONTH_LABELS.map((label, i) => ({
     label: label.slice(0, 3),
     [`${selYear}`]: ytdCurrent.find((y) => y.month === i + 1)?.cumulative ?? null,
@@ -117,10 +120,10 @@ export default function DashboardAnnual() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend />
-                <Line type="monotone" dataKey="rate" stroke="#adb5bd" dot={false} name="Taux mensuel" />
-                <Line type="monotone" dataKey="ma3" stroke="#7048e8" strokeWidth={2} dot={false} name="Moy. mobile 3 mois" />
+                <Line type="monotone" dataKey="rate" stroke={SLATE} dot={false} name="Taux mensuel" />
+                <Line type="monotone" dataKey="ma3" stroke={GOLD} strokeWidth={2} dot={false} name="Moy. mobile 3 mois" />
               </LineChart>
             </ResponsiveContainer>
           </div>
@@ -131,29 +134,32 @@ export default function DashboardAnnual() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                 <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
                 <Legend />
-                <Bar dataKey="Fixes" stackId="a" fill={GROUP_COLORS.fixes} />
-                <Bar dataKey="Variables" stackId="a" fill={GROUP_COLORS.variables} />
+                <Bar dataKey="Fixes" stackId="a" fill={GROUP_COLORS.fixes} radius={[0, 0, 0, 0]} />
+                <Bar dataKey="Variables" stackId="a" fill={GROUP_COLORS.variables} radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       </section>
 
-      {/* Cumul YTD vs année précédente */}
+      {/* Cumul de l'épargne réelle, YTD vs année précédente */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Cumul YTD — {selYear} vs {selYear - 1}</h2>
+        <h2 className="text-lg font-semibold">Cumul d'épargne — {selYear} vs {selYear - 1}</h2>
+        <p className="text-xs text-gray-400 -mt-3">
+          Épargne réelle cumulée depuis janvier (solde fin de mois − solde début de mois, additionné mois après mois)
+        </p>
         <div className="card p-4">
           <ResponsiveContainer width="100%" height={260}>
             <LineChart data={ytdCombined}>
               <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
               <XAxis dataKey="label" tick={{ fontSize: 10 }} />
               <YAxis tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} />
+              <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
               <Legend />
-              <Line type="monotone" dataKey={`${selYear}`} stroke="#1971c2" strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey={`${selYear - 1}`} stroke="#adb5bd" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey={`${selYear}`} stroke={INK} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey={`${selYear - 1}`} stroke={SLATE} strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         </div>
