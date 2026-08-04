@@ -21,6 +21,7 @@ model User {
   categories    Category[]
   balances      MonthBalance[]
   privateInvestments PrivateInvestment[]
+  debts         Debt[]
 }
 
 // Catégories entièrement personnalisables par utilisateur : chaque nouvel
@@ -146,4 +147,30 @@ model PrivateInvestmentValuation {
   note            String?
 
   @@index([investmentId])
+}
+
+// Dette (crédit voiture, prêt hypothécaire, prêt personnel, investissement immobilier
+// financé...). Le paiement mensuel est répliqué automatiquement comme catégorie de
+// dépense fixe, active seulement jusqu'à la fin théorique du remboursement.
+model Debt {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name            String   // ex: "Crédit auto Clio", "Prêt hypothécaire maison"
+  type            String   // "car" | "house" | "personal" | "real_estate_investment" | "other"
+  startDate       DateTime
+  amount          Float    // capital emprunté
+  interestRatePct Float    // taux d'intérêt annuel, en %
+  durationMonths  Int      // durée totale du remboursement, en mois
+  monthlyPayment  Float    // mensualité
+
+  // Catégorie "fixes" créée automatiquement pour tracer la mensualité dans /input,
+  // active jusqu'à la fin théorique du remboursement (via son expiresAt)
+  linkedCategoryId String? @unique
+
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId])
 }
