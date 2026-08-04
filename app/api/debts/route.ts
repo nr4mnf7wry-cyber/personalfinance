@@ -12,6 +12,7 @@ export async function GET() {
   try {
     const debts = await prisma.debt.findMany({
       where: { userId: (session.user as any).id },
+      include: { prepayments: { orderBy: { date: "desc" } } },
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json(debts);
@@ -49,7 +50,7 @@ export async function POST(req: Request) {
 
   try {
     const category = await prisma.category.create({
-      data: { userId, group: "fixes", name: d.name, expiresAt: endDate },
+      data: { userId, group: "fixes", name: d.name, expiresAt: endDate, defaultAmount: d.monthlyPayment },
     });
 
     const debt = await prisma.debt.create({

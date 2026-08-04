@@ -48,8 +48,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     },
   });
 
-  // Resynchronise la catégorie liée si le nom, la date de début ou la durée ont changé
-  if (existing.linkedCategoryId && (d.name !== undefined || d.startDate !== undefined || d.durationMonths !== undefined)) {
+  // Resynchronise la catégorie liée si le nom, la date de début, la durée ou la mensualité ont changé
+  if (existing.linkedCategoryId && (d.name !== undefined || d.startDate !== undefined || d.durationMonths !== undefined || d.monthlyPayment !== undefined)) {
     const newEndDate = computeLoanEndDate(
       d.startDate !== undefined ? new Date(d.startDate) : existing.startDate,
       d.durationMonths ?? existing.durationMonths
@@ -58,6 +58,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       where: { id: existing.linkedCategoryId },
       data: {
         ...(d.name !== undefined ? { name: d.name } : {}),
+        ...(d.monthlyPayment !== undefined ? { defaultAmount: d.monthlyPayment } : {}),
         expiresAt: newEndDate,
       },
     }).catch(() => {}); // si la catégorie a été supprimée manuellement entre-temps, on ignore

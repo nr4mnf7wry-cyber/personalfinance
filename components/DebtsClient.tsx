@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { Money } from "@/components/BlurToggle";
 import { computeLoanState, DEBT_TYPE_LABELS } from "@/lib/loan";
 
+type Prepayment = { id: string; date: string; amount: number; note?: string };
 type Debt = {
   id: string;
   name: string;
@@ -14,6 +15,7 @@ type Debt = {
   durationMonths: number;
   monthlyPayment: number;
   notes?: string;
+  prepayments: Prepayment[];
 };
 
 const emptyForm = {
@@ -27,6 +29,8 @@ export default function DebtsClient() {
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [prepayingId, setPrepayingId] = useState<string | null>(null);
+  const [prepayForm, setPrepayForm] = useState({ date: new Date().toISOString().slice(0, 10), amount: "", note: "" });
 
   function refetch() {
     return fetch("/api/debts").then((r) => r.json()).then((data) => { setDebts(data); setLoading(false); });
@@ -78,11 +82,32 @@ export default function DebtsClient() {
     refetch();
   }
 
+  function totalPrepaid(d: Debt) {
+    return d.prepayments.reduce((s, p) => s + p.amount, 0);
+  }
+
+  async function handleAddPrepayment(debtId: string, closeDebt: boolean) {
+    if (!prepayForm.amount) return;
+    await fetch(`/api/debts/${debtId}/prepayments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: new Date(prepayForm.date).toISOString(),
+        amount: Number(prepayForm.amount),
+        note: prepayForm.note || undefined,
+        closeDebt,
+      }),
+    });
+    setPrepayingId(null);
+    setPrepayForm({ date: new Date().toISOString().slice(0, 10), amount: "", note: "" });
+    refetch();
+  }
+
   const totals = debts.reduce(
     (acc, d) => {
-      const s = computeLoanState(d.amount, d.interestRatePct, d.durationMonths, d.monthlyPayment, new Date(d.startDate));
+      const s = computeLoanState(d.amount, d.interestRatePct, d.durationMonths, d.monthlyPayment, new Date(d.startDate), totalPrepaid(d));
       acc.remaining += s.remainingBalance;
-      acc.monthly += s.monthsRemaining > 0 ? d.monthlyPayment : 0;
+      acc.monthly += s.monthsRemaining > 0 && s.remainingBalance > 0 ? d.monthlyPayment : 0;
       return acc;
     },
     { remaining: 0, monthly: 0 }
@@ -175,9 +200,11 @@ export default function DebtsClient() {
           </thead>
           <tbody>
             {debts.map((d) => {
-              const s = computeLoanState(d.amount, d.interestRatePct, d.durationMonths, d.monthlyPayment, new Date(d.startDate));
+              const prepaid = totalPrepaid(d);
+              const s = computeLoanState(d.amount, d.interestRatePct, d.durationMonths, d.monthlyPayment, new Date(d.startDate), prepaid);
               return (
-                <tr key={d.id} className="border-b border-gray-50">
+                <Fragment key={d.id}>
+                <tr className="border-b border-gray-50">
                   <td className="px-4 py-2 font-medium">
                     {d.name}
                     {d.notes && <div className="text-xs text-gray-400 font-normal">{d.notes}</div>}
@@ -186,19 +213,81 @@ export default function DebtsClient() {
                   <td className="px-4 py-2 text-right"><Money value={d.amount} /></td>
                   <td className="px-4 py-2 text-right text-gray-500">{d.interestRatePct.toFixed(2)}%</td>
                   <td className="px-4 py-2 text-right"><Money value={d.monthlyPayment} /></td>
-                  <td className="px-4 py-2 text-right font-medium"><Money value={s.remainingBalance} /></td>
+                  <td className="px-4 py-2 text-right font-medium">
+                    <Money value={s.remainingBalance} />
+                    {prepaid > 0 && <div className="text-xs text-green">dont <Money value={prepaid} /> remboursé en avance</div>}
+                  </td>
                   <td className="px-4 py-2 text-right text-gray-500"><Money value={s.totalInterest} /></td>
                   <td className="px-4 py-2 w-32">
-                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                      <div className="h-full bg-accent" style={{ width: `${Math.min(s.progressPct, 100)}%` }} />
-                    </div>
-                    <div className="text-xs text-gray-400 mt-1">{s.monthsElapsed}/{d.durationMonths} mois</div>
+                    {s.remainingBalance <= 0 ? (
+                      <span className="text-xs text-green font-medium">Soldée</span>
+                    ) : (
+                      <>
+                        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-accent" style={{ width: `${Math.min(s.progressPct, 100)}%` }} />
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">{s.monthsElapsed}/{d.durationMonths} mois</div>
+                      </>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => { setPrepayingId(prepayingId === d.id ? null : d.id); setPrepayForm({ date: new Date().toISOString().slice(0, 10), amount: "", note: "" }); }}
+                      className="text-gray-400 hover:text-accent text-xs mr-2"
+                    >
+                      Remb. anticipé
+                    </button>
                     <button onClick={() => startEdit(d)} className="text-gray-400 hover:text-accent text-xs mr-2">✎</button>
                     <button onClick={() => handleDelete(d.id)} className="text-gray-400 hover:text-red-500 text-xs">✕</button>
                   </td>
                 </tr>
+                {prepayingId === d.id && (
+                  <tr className="bg-blue-50">
+                    <td colSpan={9} className="px-4 py-3">
+                      <div className="flex flex-wrap items-end gap-3">
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Date</label>
+                          <input type="date" value={prepayForm.date} onChange={(e) => setPrepayForm((f) => ({ ...f, date: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Montant remboursé</label>
+                          <input type="number" step="0.01" value={prepayForm.amount} onChange={(e) => setPrepayForm((f) => ({ ...f, amount: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-32 text-right" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-gray-500 block mb-1">Note (optionnel)</label>
+                          <input value={prepayForm.note} onChange={(e) => setPrepayForm((f) => ({ ...f, note: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-40" />
+                        </div>
+                        <button onClick={() => handleAddPrepayment(d.id, false)} className="bg-accent text-white rounded-lg px-4 py-1.5 text-sm font-medium">
+                          Enregistrer
+                        </button>
+                        <button
+                          onClick={() => { setPrepayForm((f) => ({ ...f, amount: String(s.remainingBalance) })); }}
+                          className="text-xs text-accent underline"
+                          title="Remplit le montant avec le solde restant dû actuel"
+                        >
+                          Remplir avec le solde restant ({s.remainingBalance.toFixed(0)} €)
+                        </button>
+                        <button
+                          onClick={() => handleAddPrepayment(d.id, true)}
+                          className="text-xs bg-red-50 text-red-600 rounded-lg px-3 py-1.5"
+                          title="Enregistre ce remboursement ET arrête la mensualité dans la saisie future"
+                        >
+                          Solder complètement la dette
+                        </button>
+                        <button onClick={() => setPrepayingId(null)} className="text-xs text-gray-400">Annuler</button>
+                      </div>
+                      {d.prepayments.length > 0 && (
+                        <div className="mt-3 text-xs text-gray-500 space-y-1">
+                          <p className="font-medium">Historique des remboursements anticipés :</p>
+                          {d.prepayments.map((p) => (
+                            <p key={p.id}>{new Date(p.date).toLocaleDateString("fr-FR")} — {p.amount.toFixed(2)} € {p.note ? `(${p.note})` : ""}</p>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
             {debts.length === 0 && (

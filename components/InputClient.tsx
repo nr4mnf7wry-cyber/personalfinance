@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, Fragment } from "react";
 import { GROUP_LABELS, Group, MONTH_LABELS } from "@/lib/categories";
 import { Money } from "@/components/BlurToggle";
 import ExcelImport from "@/components/ExcelImport";
@@ -14,6 +14,7 @@ type Category = {
   isInvestment: boolean;
   isAdjustment: boolean;
   order: number;
+  defaultAmount: number | null;
 };
 
 const now = new Date();
@@ -36,6 +37,8 @@ export default function InputClient() {
   const [allEntries, setAllEntries] = useState<any[]>([]);
   const [newCatName, setNewCatName] = useState<Record<Group, string>>({ revenus: "", fixes: "", variables: "", epargne: "" });
   const [newCatExpiry, setNewCatExpiry] = useState<Record<Group, string>>({ revenus: "", fixes: "", variables: "", epargne: "" });
+  const [stoppingCategoryId, setStoppingCategoryId] = useState<string | null>(null);
+  const [stopMonthValue, setStopMonthValue] = useState("");
 
   function refetchCategories() {
     fetch("/api/categories").then((r) => r.json()).then(setCategories);
@@ -104,9 +107,11 @@ export default function InputClient() {
           // le mois sélectionné a déjà été saisi -> on affiche SES propres valeurs
           map[c.id] = own.amount;
         } else if (c.group === "fixes") {
-          // nouveau mois : seules les dépenses fixes se pré-remplissent (elles ne changent pas)
+          // nouveau mois : seules les dépenses fixes se pré-remplissent (elles ne changent pas).
+          // S'il n'y a encore aucun historique (ex: dette tout juste créée), on part du
+          // montant par défaut connu (ex: la mensualité) plutôt que de 0.
           const prev = prevData.find((e) => e.category === c.name && e.group === c.group && !e.subCategory);
-          map[c.id] = prev?.amount ?? 0;
+          map[c.id] = prev?.amount ?? c.defaultAmount ?? 0;
         } else {
           // revenus / variables / épargne : toujours vierge sur un nouveau mois
           map[c.id] = 0;
@@ -218,12 +223,27 @@ export default function InputClient() {
   }
 
   async function handleDeleteCategory(cat: Category) {
-    if (!confirm(`Supprimer la catégorie "${cat.name}" ? (l'historique déjà saisi est conservé)`)) return;
+    if (!confirm(`Supprimer complètement la catégorie "${cat.name}" ? (l'historique déjà saisi est conservé, mais elle disparaîtra de tous les mois du formulaire, passés comme futurs)`)) return;
     await fetch(`/api/categories/${cat.id}`, { method: "DELETE" });
     setAmounts((a) => {
       const { [cat.id]: _, ...rest } = a;
       return rest;
     });
+    refetchCategories();
+  }
+
+  // Arrête une catégorie à partir d'un mois donné (inclus), sans toucher aux mois
+  // antérieurs : ni le formulaire pour les mois passés, ni l'historique ne sont affectés.
+  async function handleStopCategory(cat: Category, stopYear: number, stopMonth: number) {
+    // dernier mois encore actif = le mois juste avant celui choisi
+    const lastActiveMonth = stopMonth === 1 ? 12 : stopMonth - 1;
+    const lastActiveYear = stopMonth === 1 ? stopYear - 1 : stopYear;
+    await fetch(`/api/categories/${cat.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expiresAt: new Date(lastActiveYear, lastActiveMonth - 1, 1).toISOString() }),
+    });
+    setStoppingCategoryId(null);
     refetchCategories();
   }
 
@@ -349,7 +369,8 @@ export default function InputClient() {
               <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">{GROUP_LABELS[g]}</h3>
               <div className="grid md:grid-cols-2 gap-3">
                 {activeCategories.filter((c) => c.group === g).map((c) => (
-                  <div key={c.id} className="flex items-center gap-2">
+                  <Fragment key={c.id}>
+                  <div className="flex items-center gap-2">
                     <input
                       defaultValue={c.name}
                       onBlur={(e) => handleRenameCategory(c, e.target.value)}
@@ -387,13 +408,41 @@ export default function InputClient() {
                       />
                     )}
                     <button
-                      onClick={() => handleDeleteCategory(c)}
+                      onClick={() => { setStoppingCategoryId(stoppingCategoryId === c.id ? null : c.id); setStopMonthValue(`${year}-${String(month).padStart(2, "0")}`); }}
                       className="text-gray-300 hover:text-red-500 text-sm px-1"
-                      title="Supprimer cette catégorie"
+                      title="Arrêter ou supprimer cette catégorie"
                     >
                       ✕
                     </button>
                   </div>
+                  {stoppingCategoryId === c.id && (
+                    <div className="md:col-span-2 bg-amber-50 rounded-lg p-3 flex flex-wrap items-center gap-3 text-sm">
+                      <span className="text-gray-700">Ne plus afficher "{c.name}" à partir de :</span>
+                      <input
+                        type="month"
+                        value={stopMonthValue}
+                        onChange={(e) => setStopMonthValue(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-2 py-1"
+                      />
+                      <button
+                        onClick={() => {
+                          const [y, m] = stopMonthValue.split("-").map(Number);
+                          if (y && m) handleStopCategory(c, y, m);
+                        }}
+                        className="bg-accent text-white rounded-lg px-3 py-1"
+                      >
+                        Arrêter à partir de ce mois
+                      </button>
+                      <span className="text-gray-400">— l'historique des mois précédents reste intact</span>
+                      <button onClick={() => handleDeleteCategory(c)} className="text-red-500 text-xs ml-auto">
+                        Supprimer complètement (tous les mois)
+                      </button>
+                      <button onClick={() => setStoppingCategoryId(null)} className="text-gray-400 text-xs">
+                        Annuler
+                      </button>
+                    </div>
+                  )}
+                  </Fragment>
                 ))}
               </div>
 

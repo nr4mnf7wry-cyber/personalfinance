@@ -41,6 +41,11 @@ model Category {
   // la catégorie n'apparaît plus dans le formulaire de saisie mensuelle.
   expiresAt  DateTime?
 
+  // Montant suggéré quand aucun mois précédent n'a encore de valeur pour cette
+  // catégorie (au lieu de partir de 0) — utilisé notamment par les dettes, dont la
+  // mensualité connue doit apparaître pré-remplie dès la première saisie.
+  defaultAmount Float?
+
   // Catégorie spéciale "Investissement" : son montant génère/complète une Transaction
   isInvestment Boolean @default(false)
   // Catégorie spéciale "ajustement" : son montant est calculé automatiquement
@@ -172,5 +177,21 @@ model Debt {
   notes           String?
   createdAt       DateTime @default(now())
 
+  prepayments     DebtPrepayment[]
+
   @@index([userId])
+}
+
+// Remboursement anticipé (partiel ou total) : réduit le solde restant dû sans
+// modifier l'échéancier théorique d'origine.
+model DebtPrepayment {
+  id      String @id @default(cuid())
+  debtId  String
+  debt    Debt   @relation(fields: [debtId], references: [id], onDelete: Cascade)
+
+  date    DateTime @default(now())
+  amount  Float
+  note    String?
+
+  @@index([debtId])
 }

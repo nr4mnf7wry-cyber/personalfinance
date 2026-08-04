@@ -13,7 +13,8 @@ export function computeLoanState(
   interestRatePct: number,
   durationMonths: number,
   monthlyPayment: number,
-  startDate: Date
+  startDate: Date,
+  prepayments: number = 0
 ): LoanState {
   const now = new Date();
   const monthsElapsedRaw =
@@ -32,7 +33,9 @@ export function computeLoanState(
     const factor = Math.pow(1 + monthlyRate, monthsElapsed);
     remainingBalance = amount * factor - monthlyPayment * ((factor - 1) / monthlyRate);
   }
-  remainingBalance = Math.max(remainingBalance, 0);
+  // Un remboursement anticipé réduit directement le capital restant dû
+  // (échéancier théorique inchangé — approximation raisonnable pour un suivi personnel)
+  remainingBalance = Math.max(remainingBalance - prepayments, 0);
 
   const payoffDate = new Date(startDate.getFullYear(), startDate.getMonth() + durationMonths - 1, 1);
   const progressPct = durationMonths > 0 ? (monthsElapsed / durationMonths) * 100 : 0;
