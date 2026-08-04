@@ -9,6 +9,7 @@ const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/input", label: "Saisie" },
   { href: "/investments", label: "Investissements" },
+  { href: "/dettes", label: "Dettes" },
 ];
 
 export default function Nav() {
@@ -26,7 +27,7 @@ export default function Nav() {
                 className={clsx(
                   "text-sm px-2 py-1 rounded-md",
                   pathname?.startsWith(l.href)
-                    ? "bg-blue-50 text-accent font-medium"
+                    ? "bg-[#F5F0E6] text-accent font-medium"
                     : "text-gray-600 hover:text-gray-900"
                 )}
               >
