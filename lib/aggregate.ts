@@ -119,6 +119,27 @@ export function capToCurrentMonth(entries: Entry[]): Entry[] {
   return entries.filter((e) => e.year < y || (e.year === y && e.month <= m));
 }
 
+// Compare un mois à celui juste avant (et non l'année précédente), catégorie par
+// catégorie — utile pour repérer les postes qui ont le plus bougé d'un mois à l'autre
+export function momByCategory(entries: Entry[], year: number, month: number) {
+  const prevMonth = month === 1 ? 12 : month - 1;
+  const prevYear = month === 1 ? year - 1 : year;
+
+  const current = entries.filter((e) => e.year === year && e.month === month && (e.group === "fixes" || e.group === "variables"));
+  const previous = entries.filter((e) => e.year === prevYear && e.month === prevMonth && (e.group === "fixes" || e.group === "variables"));
+
+  const categories = Array.from(new Set([...current, ...previous].map((e) => e.category)));
+
+  return categories
+    .map((category) => {
+      const cur = current.find((e) => e.category === category)?.amount ?? 0;
+      const prev = previous.find((e) => e.category === category)?.amount ?? 0;
+      return { category, current: cur, previous: prev, delta: cur - prev };
+    })
+    .filter((r) => r.current !== 0 || r.previous !== 0)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+}
+
 // Compare un mois donné au même mois de l'année précédente, par catégorie
 export function yoyByCategory(entries: Entry[], year: number, month: number) {
   const current = entries.filter((e) => e.year === year && e.month === month);
@@ -126,12 +147,15 @@ export function yoyByCategory(entries: Entry[], year: number, month: number) {
 
   const categories = Array.from(new Set([...current, ...previous].map((e) => e.category)));
 
-  return categories.map((category) => {
-    const cur = current.find((e) => e.category === category)?.amount ?? 0;
-    const prev = previous.find((e) => e.category === category)?.amount ?? 0;
-    const deltaPct = prev !== 0 ? ((cur - prev) / prev) * 100 : cur !== 0 ? 100 : 0;
-    return { category, current: cur, previous: prev, deltaPct };
-  });
+  return categories
+    .map((category) => {
+      const cur = current.find((e) => e.category === category)?.amount ?? 0;
+      const prev = previous.find((e) => e.category === category)?.amount ?? 0;
+      const deltaPct = prev !== 0 ? ((cur - prev) / prev) * 100 : cur !== 0 ? 100 : 0;
+      return { category, current: cur, previous: prev, deltaPct };
+    })
+    .filter((r) => r.current !== 0 || r.previous !== 0)
+    .sort((a, b) => Math.max(b.current, b.previous) - Math.max(a.current, a.previous));
 }
 
 export function ytdCumulative(monthTotals: MonthTotals[], year: number, field: "net" | "epargne" = "net") {
