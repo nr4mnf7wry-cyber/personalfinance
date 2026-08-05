@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  AreaChart, Area,
+  AreaChart, Area, LineChart, Line,
 } from "recharts";
 import Link from "next/link";
 import StatTile from "@/components/StatTile";
@@ -13,7 +13,7 @@ import { GROUP_COLORS, MONTH_LABELS } from "@/lib/categories";
 import { Entry, computeMonthTotals, yearTotals, capToCurrentMonth, Balance } from "@/lib/aggregate";
 import { computeWealthEvolution } from "@/lib/wealth";
 import { savingsRateTrendInsight, expenseConcentrationInsight, cashflowStreakInsight, Insight } from "@/lib/insights";
-import { WEALTH_PALETTE } from "@/lib/theme";
+import { WEALTH_PALETTE, GOLD, POSITIVE, NEGATIVE } from "@/lib/theme";
 
 const now = new Date();
 const CURRENT_YEAR = now.getFullYear();
@@ -27,6 +27,7 @@ export default function DashboardGeneral() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [privateInvestments, setPrivateInvestments] = useState<any[]>([]);
   const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });
+  const [prices, setPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,6 +50,29 @@ export default function DashboardGeneral() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions]);
 
+  // Positions nettes détenues (achats - ventes) par ticker, pour la valeur live du portefeuille
+  const positions = useMemo(() => {
+    const map = new Map<string, { ticker: string; quantity: number; currency: string }>();
+    for (const t of transactions) {
+      const cur = map.get(t.ticker) ?? { ticker: t.ticker, quantity: 0, currency: t.currency ?? "EUR" };
+      cur.quantity += t.type === "vente" ? -t.quantity : t.quantity;
+      map.set(t.ticker, cur);
+    }
+    return Array.from(map.values()).filter((p) => p.quantity > 0.0001);
+  }, [transactions]);
+
+  // Cours actuels pour chaque position détenue
+  useEffect(() => {
+    positions.forEach((p) => {
+      if (prices[p.ticker] !== undefined) return;
+      fetch(`/api/stock-price?ticker=${encodeURIComponent(p.ticker)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => setPrices((prev) => ({ ...prev, [p.ticker]: data?.price ?? -1 })))
+        .catch(() => setPrices((prev) => ({ ...prev, [p.ticker]: -1 })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [positions]);
+
   const entries = useMemo(() => capToCurrentMonth(entriesRaw), [entriesRaw]);
   const balancesCapped = useMemo(
     () => balances.filter((b) => b.year < CURRENT_YEAR || (b.year === CURRENT_YEAR && b.month <= CURRENT_MONTH)),
@@ -57,8 +81,10 @@ export default function DashboardGeneral() {
   const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped), [entries, balancesCapped]);
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
 
-  // Le résumé exécutif s'appuie sur le dernier mois CLOS (mois précédent) : le mois en
-  // cours est presque toujours incomplet (solde de fin pas encore connu, etc.)
+  // Le résumé exécutif s'appuie sur le dernier mois CLOS (mois précédent) pour dépenses/épargne/taux
+  // (le mois en cours est presque toujours incomplet), mais les revenus du mois EN COURS sont
+  // généralement déjà connus (salaire versé en début de mois) donc affichés tels quels.
+  const currentMonthTotals = monthTotals.find((t) => t.year === CURRENT_YEAR && t.month === CURRENT_MONTH);
   const prevMonth = CURRENT_MONTH === 1 ? 12 : CURRENT_MONTH - 1;
   const prevYear = CURRENT_MONTH === 1 ? CURRENT_YEAR - 1 : CURRENT_YEAR;
   const lastClosed = monthTotals.find((t) => t.year === prevYear && t.month === prevMonth);
@@ -95,6 +121,16 @@ export default function DashboardGeneral() {
 
   const investedCapital = listedInvestedCapital + privateInvestedValue;
 
+  // Valeur live du portefeuille coté (cours actuels x quantité détenue), converti EUR
+  const listedPortfolioValue = useMemo(() => {
+    return positions.reduce((s, p) => {
+      const price = prices[p.ticker];
+      const value = price && price > 0 ? price * p.quantity : 0;
+      return s + value * (rates[p.currency] ?? 1);
+    }, 0);
+  }, [positions, prices, rates]);
+  const portfolioValue = listedPortfolioValue + privateInvestedValue;
+
   const liquidBalance = useMemo(() => {
     const valid = balancesCapped.filter((b) => b.endBalance != null);
     const latest = [...valid].sort((a, b) => (a.year - b.year) || (a.month - b.month)).pop();
@@ -105,6 +141,17 @@ export default function DashboardGeneral() {
   const wealthSeries = useMemo(
     () => computeWealthEvolution(balancesCapped, transactions, rates),
     [balancesCapped, transactions, rates]
+  );
+
+  // Évolution du cashflow (revenus / dépenses / net) sur toute la période
+  const cashflowSeries = useMemo(
+    () => monthTotals.map((t) => ({
+      label: `${MONTH_LABELS[t.month - 1].slice(0, 3)} ${t.year}`,
+      Revenus: t.revenus,
+      Dépenses: t.depenses,
+      Net: t.net,
+    })),
+    [monthTotals]
   );
 
   const insights: Insight[] = useMemo(() => {
@@ -138,15 +185,17 @@ export default function DashboardGeneral() {
         <div>
           <h2 className="text-lg font-semibold">Résumé exécutif</h2>
           <p className="text-sm text-gray-400">
-            Patrimoine à aujourd'hui · reste sur {MONTH_LABELS[prevMonth - 1]} {prevYear} (dernier mois clos)
+            Patrimoine et revenus à aujourd'hui · dépenses, épargne et taux sur {MONTH_LABELS[prevMonth - 1]} {prevYear} (dernier mois clos)
           </p>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <StatTile label="Patrimoine total" value={totalWealth} />
+          <StatTile label={`Revenus — ${MONTH_LABELS[CURRENT_MONTH - 1].slice(0, 3)}`} value={currentMonthTotals?.revenus ?? 0} />
+          <StatTile label="Valeur du portefeuille" value={portfolioValue} />
+          <StatTile label={`Dépenses — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.depenses ?? 0} />
           <StatTile label={`Épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.epargne ?? 0} />
           <StatTile label={`Taux d'épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.savingsRate ?? 0} isCurrency={false} />
-          <StatTile label={`Revenus — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.revenus ?? 0} />
         </div>
 
         {insights.length > 0 && (
@@ -184,6 +233,22 @@ export default function DashboardGeneral() {
               Renseigne un solde de fin de mois dans /input pour voir cette évolution se construire.
             </p>
           )}
+        </div>
+
+        <div className="card p-4">
+          <p className="text-sm text-gray-500 mb-2">Évolution du cashflow (revenus, dépenses, net)</p>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={cashflowSeries}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+              <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+              <YAxis tick={{ fontSize: 10 }} />
+              <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
+              <Legend />
+              <Line type="monotone" dataKey="Revenus" stroke={POSITIVE} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Dépenses" stroke={NEGATIVE} strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="Net" stroke={GOLD} strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
 
         <div className="grid md:grid-cols-2 gap-6">

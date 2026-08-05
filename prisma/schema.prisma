@@ -22,6 +22,7 @@ model User {
   balances      MonthBalance[]
   privateInvestments PrivateInvestment[]
   debts         Debt[]
+  bankAccounts  BankAccount[]
 }
 
 // Catégories entièrement personnalisables par utilisateur : chaque nouvel
@@ -194,4 +195,24 @@ model DebtPrepayment {
   note    String?
 
   @@index([debtId])
+}
+
+// Compte bancaire : solde connu, et part du salaire qui y est routée (répartition,
+// en % — doit idéalement totaliser 100% entre tous les comptes de l'utilisateur).
+model BankAccount {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name          String   // ex: "Compte courant Belfius", "Épargne", "Revolut"
+  type          String   @default("courant") // "courant" | "epargne" | "investissement" | "autre"
+  balance       Float    @default(0)
+  allocationPct Float?   // % du salaire routé vers ce compte (optionnel)
+  order         Int      @default(0)
+
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  @@unique([userId, name])
+  @@index([userId])
 }

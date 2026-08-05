@@ -10,6 +10,7 @@ const links = [
   { href: "/input", label: "Saisie" },
   { href: "/investments", label: "Investissements" },
   { href: "/dettes", label: "Dettes" },
+  { href: "/comptes", label: "Comptes" },
 ];
 
 export default function Nav() {

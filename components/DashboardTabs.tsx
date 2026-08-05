@@ -6,8 +6,7 @@ import clsx from "clsx";
 
 const tabs = [
   { href: "/dashboard", label: "Général" },
-  { href: "/dashboard/mensuelle", label: "Mensuelle" },
-  { href: "/dashboard/annuelle", label: "Annuelle" },
+  { href: "/dashboard/analyse", label: "Analyse" },
 ];
 
 export default function DashboardTabs() {
