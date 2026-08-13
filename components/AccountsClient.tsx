@@ -26,6 +26,7 @@ const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--
 
 export default function AccountsClient() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [latestMonthlyBalance, setLatestMonthlyBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -34,7 +35,14 @@ export default function AccountsClient() {
   function refetch() {
     return fetch("/api/accounts").then((r) => r.json()).then((data) => { setAccounts(data); setLoading(false); });
   }
-  useEffect(() => { refetch(); }, []);
+  useEffect(() => {
+    refetch();
+    // Dernier solde de fin de mois connu, saisi dans /input — pour comparaison
+    fetch("/api/balances").then((r) => r.json()).then((data: any[]) => {
+      const valid = data.filter((b) => b.endBalance != null).sort((a, b) => (a.year - b.year) || (a.month - b.month));
+      setLatestMonthlyBalance(valid.length ? valid[valid.length - 1].endBalance : null);
+    });
+  }, []);
 
   function startEdit(a: Account) {
     setEditingId(a.id);
@@ -108,6 +116,14 @@ export default function AccountsClient() {
           )}
         </div>
       </div>
+
+      {latestMonthlyBalance !== null && Math.abs(latestMonthlyBalance - totalBalance) > 1 && (
+        <p className="text-xs text-gray-400 bg-[#F5F0E6] rounded-lg p-3">
+          Pour info : le dernier solde de fin de mois saisi dans <a href="/input" className="text-accent">/input</a> est de{" "}
+          <Money value={latestMonthlyBalance} /> — cette page affiche <Money value={totalBalance} /> au total sur tes comptes.
+          Les deux ne sont pas reliés automatiquement, à toi de voir si ça mérite une correction quelque part.
+        </p>
+      )}
 
       <div className="flex justify-end">
         <button onClick={() => (showForm ? cancelForm() : setShowForm(true))} className="text-sm bg-accent text-white rounded-lg px-4 py-2 font-medium">

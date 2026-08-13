@@ -6,6 +6,7 @@ import { Money } from "@/components/BlurToggle";
 import ExcelImport from "@/components/ExcelImport";
 import HistoryTable from "@/components/HistoryTable";
 import StatTile from "@/components/StatTile";
+import MonthYearPicker from "@/components/MonthYearPicker";
 
 type Category = {
   id: string;
@@ -305,12 +306,13 @@ export default function InputClient() {
     <div className="space-y-8">
       {/* Barre d'outils */}
       <div className="card p-4 flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-            {MONTH_LABELS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-          </select>
-          <input type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-gray-300 rounded-lg px-3 py-2 w-24 text-sm" />
-        </div>
+        <MonthYearPicker
+          year={year}
+          month={month}
+          onChange={(y, m) => { setYear(y); setMonth(m); }}
+          maxYear={now.getFullYear()}
+          maxMonth={now.getMonth() + 1}
+        />
 
         {/* Segmented control condensé/détaillé */}
         <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">

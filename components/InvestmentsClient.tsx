@@ -6,6 +6,7 @@ import {
   PieChart, Pie, Cell, Legend,
 } from "recharts";
 import { Money } from "@/components/BlurToggle";
+import StatTile from "@/components/StatTile";
 
 type Transaction = {
   id: string;
@@ -34,6 +35,7 @@ export default function InvestmentsClient() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   function refetchTransactions() {
     return fetch("/api/investments").then((r) => r.json()).then(setTransactions);
@@ -197,9 +199,9 @@ export default function InvestmentsClient() {
 
   return (
     <div className="space-y-10">
-      {/* Résumé */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Résumé</h2>
+      {/* Barre d'outils */}
+      <div className="card p-4 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-ink">Portefeuille coté</h2>
         <button
           onClick={() => (showForm ? cancelForm() : setShowForm(true))}
           className="text-sm bg-accent text-white rounded-lg px-4 py-2 font-medium"
@@ -255,14 +257,8 @@ export default function InvestmentsClient() {
 
       {/* Chiffres clés (convertis en EUR) */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <div className="card p-5">
-          <p className="text-sm text-gray-500">Valeur du portefeuille</p>
-          <p className="text-2xl font-semibold"><Money value={totalCurrentValue} /></p>
-        </div>
-        <div className="card p-5">
-          <p className="text-sm text-gray-500">Montant investi</p>
-          <p className="text-2xl font-semibold"><Money value={totalInvested} /></p>
-        </div>
+        <StatTile label="Valeur du portefeuille" value={totalCurrentValue} />
+        <StatTile label="Montant investi" value={totalInvested} />
         <div className="card p-5">
           <p className="text-sm text-gray-500">Plus/moins-value latente</p>
           <p className={`text-2xl font-semibold ${totalUnrealizedGain >= 0 ? "text-green" : "text-red"}`}>
@@ -386,7 +382,7 @@ export default function InvestmentsClient() {
             </thead>
             <tbody>
               {transactions.map((t) => (
-                <tr key={t.id} className="border-b border-gray-50">
+                <tr key={t.id} className="border-b border-gray-50 relative">
                   <td className="px-4 py-2">{new Date(t.date).toLocaleDateString("fr-FR")}</td>
                   <td className="px-4 py-2">
                     <span className={`text-xs px-2 py-0.5 rounded ${t.type === "vente" ? "bg-red-50 text-red-600" : "bg-green-50 text-green-700"}`}>
@@ -399,9 +395,20 @@ export default function InvestmentsClient() {
                   <td className="px-4 py-2 text-right">{t.unitPrice.toFixed(2)}</td>
                   <td className="px-4 py-2 text-right">{t.amount.toFixed(2)}</td>
                   <td className="px-4 py-2 text-right text-gray-500">{t.currency ?? "EUR"}</td>
-                  <td className="px-4 py-2 text-right whitespace-nowrap">
-                    <button onClick={() => startEdit(t)} className="text-gray-400 hover:text-accent text-xs mr-2" title="Modifier">✎</button>
-                    <button onClick={() => handleDelete(t.id)} className="text-gray-400 hover:text-red-500 text-xs" title="Supprimer">✕</button>
+                  <td className="px-4 py-2 text-right relative">
+                    <button onClick={() => setMenuOpenId(menuOpenId === t.id ? null : t.id)} className="text-gray-300 hover:text-gray-600 w-6" title="Actions">
+                      ⋯
+                    </button>
+                    {menuOpenId === t.id && (
+                      <div className="absolute right-4 top-8 z-10 card bg-white shadow-lg py-1 w-40 text-sm text-left">
+                        <button onClick={() => { startEdit(t); setMenuOpenId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50">
+                          Modifier
+                        </button>
+                        <button onClick={() => { handleDelete(t.id); setMenuOpenId(null); }} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">
+                          Supprimer
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}

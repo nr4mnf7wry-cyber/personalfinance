@@ -12,6 +12,7 @@ import { Money } from "@/components/BlurToggle";
 import { GROUP_COLORS, MONTH_LABELS } from "@/lib/categories";
 import { Entry, computeMonthTotals, yearTotals, capToCurrentMonth, Balance } from "@/lib/aggregate";
 import { computeWealthEvolution } from "@/lib/wealth";
+import { computeLoanState } from "@/lib/loan";
 import { savingsRateTrendInsight, expenseConcentrationInsight, cashflowStreakInsight, Insight } from "@/lib/insights";
 import { WEALTH_PALETTE, GOLD, POSITIVE, NEGATIVE } from "@/lib/theme";
 
@@ -26,6 +27,7 @@ export default function DashboardGeneral() {
   const [balances, setBalances] = useState<Balance[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [privateInvestments, setPrivateInvestments] = useState<any[]>([]);
+  const [debts, setDebts] = useState<any[]>([]);
   const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -35,6 +37,7 @@ export default function DashboardGeneral() {
     fetch("/api/balances").then((r) => r.json()).then(setBalances);
     fetch("/api/investments").then((r) => r.json()).then(setTransactions);
     fetch("/api/private-investments").then((r) => r.json()).then(setPrivateInvestments);
+    fetch("/api/debts").then((r) => r.json()).then(setDebts);
   }, []);
 
   // Taux de change pour toutes les devises utilisées par les transactions cotées
@@ -163,7 +166,17 @@ export default function DashboardGeneral() {
     return list.filter((i): i is Insight => i !== null);
   }, [monthTotals, donutData]);
 
-  const totalWealth = (liquidBalance ?? 0) + investedCapital;
+  // Solde restant dû total sur toutes les dettes (net des remboursements anticipés)
+  const totalDebtRemaining = useMemo(() => {
+    return debts.reduce((s, d) => {
+      const prepaid = (d.prepayments ?? []).reduce((ps: number, p: any) => ps + p.amount, 0);
+      const state = computeLoanState(d.amount, d.interestRatePct, d.durationMonths, d.monthlyPayment, new Date(d.startDate), prepaid);
+      return s + state.remainingBalance;
+    }, 0);
+  }, [debts]);
+
+  // Patrimoine NET = liquidités + valeur du portefeuille (cours en direct) - dettes restantes
+  const totalWealth = (liquidBalance ?? 0) + portfolioValue - totalDebtRemaining;
   const wealthAllocation = [
     { name: "Liquidités", value: Math.max(liquidBalance ?? 0, 0) },
     { name: "Investissements", value: Math.max(investedCapital, 0) },
@@ -197,6 +210,12 @@ export default function DashboardGeneral() {
           <StatTile label={`Épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.epargne ?? 0} />
           <StatTile label={`Taux d'épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.savingsRate ?? 0} isCurrency={false} />
         </div>
+        {totalDebtRemaining > 0 && (
+          <p className="text-xs text-gray-400">
+            Patrimoine net = liquidités (<Money value={liquidBalance ?? 0} />) + portefeuille (<Money value={portfolioValue} />) − dettes restantes (<Money value={totalDebtRemaining} />)
+            {" · "}<Link href="/dettes" className="text-accent">voir le détail des dettes →</Link>
+          </p>
+        )}
 
         {insights.length > 0 && (
           <div className="card p-5 space-y-2">

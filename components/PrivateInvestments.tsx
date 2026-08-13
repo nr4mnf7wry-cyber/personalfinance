@@ -24,6 +24,7 @@ export default function PrivateInvestments() {
   const [form, setForm] = useState(emptyForm);
   const [revaluing, setRevaluing] = useState<string | null>(null);
   const [revalForm, setRevalForm] = useState({ estimatedValue: "", note: "" });
+  const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   function refetch() {
     return fetch("/api/private-investments").then((r) => r.json()).then((data) => { setItems(data); setLoading(false); });
@@ -84,9 +85,9 @@ export default function PrivateInvestments() {
 
   return (
     <section className="space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="card p-4 flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Investissements non cotés</h2>
+          <h2 className="text-sm font-semibold text-ink">Investissements non cotés</h2>
           <p className="text-xs text-gray-400">Immobilier, prêts privés, parts d'entreprise... — sans cours en direct, à réévaluer toi-même de temps en temps.</p>
         </div>
         <button onClick={() => setShowForm((s) => !s)} className="text-sm bg-accent text-white rounded-lg px-4 py-2 font-medium">
@@ -166,15 +167,27 @@ export default function PrivateInvestments() {
                     <td className={`px-4 py-2 text-right ${gain >= 0 ? "text-green" : "text-red"}`}>
                       <Money value={gain} /> ({gainPct.toFixed(1)}%)
                     </td>
-                    <td className="px-4 py-2 text-right whitespace-nowrap">
-                      <button onClick={() => { setRevaluing(revaluing === inv.id ? null : inv.id); setRevalForm({ estimatedValue: String(currentValue), note: "" }); }} className="text-accent text-xs mr-3">
-                        Réévaluer
+                    <td className="px-4 py-2 text-right relative">
+                      <button onClick={() => setMenuOpenId(menuOpenId === inv.id ? null : inv.id)} className="text-gray-300 hover:text-gray-600 w-6" title="Actions">
+                        ⋯
                       </button>
-                      <button onClick={() => handleDelete(inv.id)} className="text-gray-400 hover:text-red-500 text-xs">✕</button>
+                      {menuOpenId === inv.id && (
+                        <div className="absolute right-4 top-8 z-10 card bg-white shadow-lg py-1 w-40 text-sm text-left">
+                          <button
+                            onClick={() => { setRevaluing(revaluing === inv.id ? null : inv.id); setRevalForm({ estimatedValue: String(currentValue), note: "" }); setMenuOpenId(null); }}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-50"
+                          >
+                            Réévaluer
+                          </button>
+                          <button onClick={() => { handleDelete(inv.id); setMenuOpenId(null); }} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600">
+                            Supprimer
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                   {revaluing === inv.id && (
-                    <tr className="bg-blue-50">
+                    <tr className="bg-[#F5F0E6]">
                       <td colSpan={7} className="px-4 py-3">
                         <div className="flex flex-wrap items-end gap-3">
                           <div>

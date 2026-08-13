@@ -8,9 +8,7 @@ import clsx from "clsx";
 const links = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/input", label: "Saisie" },
-  { href: "/investments", label: "Investissements" },
-  { href: "/dettes", label: "Dettes" },
-  { href: "/comptes", label: "Comptes" },
+  { href: "/investments", label: "Patrimoine", group: ["/investments", "/dettes", "/comptes"] },
 ];
 
 export default function Nav() {
@@ -21,20 +19,23 @@ export default function Nav() {
         <div className="flex items-center gap-6">
           <span className="font-semibold">Budget & Patrimoine</span>
           <div className="flex gap-4">
-            {links.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                className={clsx(
-                  "text-sm px-2 py-1 rounded-md",
-                  pathname?.startsWith(l.href)
-                    ? "bg-[#F5F0E6] text-accent font-medium"
-                    : "text-gray-600 hover:text-gray-900"
-                )}
-              >
-                {l.label}
-              </Link>
-            ))}
+            {links.map((l) => {
+              const active = l.group ? l.group.some((g) => pathname?.startsWith(g)) : pathname?.startsWith(l.href);
+              return (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  className={clsx(
+                    "text-sm px-2 py-1 rounded-md",
+                    active
+                      ? "bg-[#F5F0E6] text-accent font-medium"
+                      : "text-gray-600 hover:text-gray-900"
+                  )}
+                >
+                  {l.label}
+                </Link>
+              );
+            })}
           </div>
         </div>
         <button
