@@ -11,6 +11,8 @@ const schema = z.object({
   startDate: z.string().optional(),
   expectedReturnPct: z.number().nullable().optional(),
   notes: z.string().optional(),
+  closedAt: z.string().nullable().optional(),
+  closedAmount: z.number().nullable().optional(),
 });
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -38,6 +40,8 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       ...(d.startDate !== undefined ? { startDate: new Date(d.startDate) } : {}),
       ...(d.expectedReturnPct !== undefined ? { expectedReturnPct: d.expectedReturnPct } : {}),
       ...(d.notes !== undefined ? { notes: d.notes } : {}),
+      ...(d.closedAt !== undefined ? { closedAt: d.closedAt ? new Date(d.closedAt) : null } : {}),
+      ...(d.closedAmount !== undefined ? { closedAmount: d.closedAmount } : {}),
     },
   });
 

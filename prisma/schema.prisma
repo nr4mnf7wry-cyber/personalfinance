@@ -136,6 +136,11 @@ model PrivateInvestment {
   expectedReturnPct Float?    // rendement annuel attendu, en % (optionnel)
   notes             String?
 
+  // Clôture : une fois renseignée, l'investissement sort du calcul du patrimoine
+  // (le montant reçu doit être ajouté manuellement au solde en banque par l'utilisateur)
+  closedAt          DateTime?
+  closedAmount      Float?
+
   valuations        PrivateInvestmentValuation[]
   createdAt         DateTime  @default(now())
 

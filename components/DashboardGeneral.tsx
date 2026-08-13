@@ -105,17 +105,31 @@ export default function DashboardGeneral() {
     [years, monthTotals]
   );
 
-  // Investissements cotés : capital net investi (coût d'acquisition, converti EUR)
+  // Investissements cotés : coût d'acquisition de ce qui est ENCORE détenu (pas une
+  // simple soustraction achats-ventes, qui devient fausse — négative — une fois une
+  // position totalement revendue avec plus-value)
   const listedInvestedCapital = useMemo(() => {
-    return transactions.reduce((s, t) => {
-      const signed = t.type === "vente" ? -t.amount : t.amount;
-      return s + signed * (rates[t.currency] ?? 1);
-    }, 0);
+    const byTicker = new Map<string, { buyQty: number; buyAmount: number; sellQty: number; currency: string }>();
+    for (const t of transactions) {
+      const cur = byTicker.get(t.ticker) ?? { buyQty: 0, buyAmount: 0, sellQty: 0, currency: t.currency ?? "EUR" };
+      if (t.type === "vente") cur.sellQty += t.quantity;
+      else { cur.buyQty += t.quantity; cur.buyAmount += t.amount; }
+      byTicker.set(t.ticker, cur);
+    }
+    let total = 0;
+    for (const { buyQty, buyAmount, sellQty, currency } of byTicker.values()) {
+      const avgPrice = buyQty > 0 ? buyAmount / buyQty : 0;
+      const remainingQty = Math.max(buyQty - sellQty, 0);
+      total += avgPrice * remainingQty * (rates[currency] ?? 1);
+    }
+    return total;
   }, [transactions, rates]);
 
-  // Investissements non cotés : dernière valeur estimée connue pour chacun
+  // Investissements non cotés : dernière valeur estimée connue pour chacun,
+  // en excluant ceux qui ont été clôturés (l'argent reçu doit être ajouté au
+  // solde en banque manuellement — sinon il serait compté deux fois)
   const privateInvestedValue = useMemo(() => {
-    return privateInvestments.reduce((s, inv) => {
+    return privateInvestments.filter((inv) => !inv.closedAt).reduce((s, inv) => {
       const last = [...(inv.valuations ?? [])].sort((a: any, b: any) => a.date.localeCompare(b.date)).pop();
       const value = last?.estimatedValue ?? inv.amountInvested;
       return s + value * (rates[inv.currency] ?? 1);
@@ -179,7 +193,7 @@ export default function DashboardGeneral() {
   const totalWealth = (liquidBalance ?? 0) + portfolioValue - totalDebtRemaining;
   const wealthAllocation = [
     { name: "Liquidités", value: Math.max(liquidBalance ?? 0, 0) },
-    { name: "Investissements", value: Math.max(investedCapital, 0) },
+    { name: "Investissements", value: Math.max(portfolioValue, 0) },
   ].filter((w) => w.value > 0);
 
   if (loading) return <p className="text-gray-500">Chargement...</p>;
