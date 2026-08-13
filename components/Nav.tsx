@@ -5,21 +5,23 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import clsx from "clsx";
 
-const links = [
+// Pages de consultation (regroupées, style onglet classique)
+const viewLinks = [
   { href: "/dashboard", label: "Dashboard" },
-  { href: "/input", label: "Saisie" },
   { href: "/investments", label: "Patrimoine", group: ["/investments", "/dettes", "/comptes"] },
 ];
 
 export default function Nav() {
   const pathname = usePathname();
+  const onInputPage = pathname?.startsWith("/input");
+
   return (
     <nav className="border-b border-[var(--border)] bg-white">
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-6">
           <span className="font-semibold">Budget & Patrimoine</span>
           <div className="flex gap-4">
-            {links.map((l) => {
+            {viewLinks.map((l) => {
               const active = l.group ? l.group.some((g) => pathname?.startsWith(g)) : pathname?.startsWith(l.href);
               return (
                 <Link
@@ -38,12 +40,28 @@ export default function Nav() {
             })}
           </div>
         </div>
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          className="text-sm text-gray-500 hover:text-gray-800"
-        >
-          Déconnexion
-        </button>
+
+        <div className="flex items-center gap-3">
+          {/* Saisie : volontairement à part — c'est une action, pas une page de consultation */}
+          <Link
+            href="/input"
+            className={clsx(
+              "text-sm px-3 py-1.5 rounded-lg border font-medium flex items-center gap-1.5",
+              onInputPage
+                ? "bg-accent text-white border-accent"
+                : "border-accent text-accent hover:bg-[#F5F0E6]"
+            )}
+          >
+            <span>+</span> Saisie
+          </Link>
+          <div className="w-px h-5 bg-gray-200" />
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="text-sm text-gray-500 hover:text-gray-800"
+          >
+            Déconnexion
+          </button>
+        </div>
       </div>
     </nav>
   );

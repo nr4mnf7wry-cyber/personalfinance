@@ -23,6 +23,7 @@ model User {
   privateInvestments PrivateInvestment[]
   debts         Debt[]
   bankAccounts  BankAccount[]
+  goals         Goal[]
 }
 
 // Catégories entièrement personnalisables par utilisateur : chaque nouvel
@@ -219,5 +220,22 @@ model BankAccount {
   createdAt     DateTime @default(now())
 
   @@unique([userId, name])
+  @@index([userId])
+}
+
+// Objectif patrimonial (ex: "Indépendance financière", "Apport maison") : un montant
+// cible, une échéance optionnelle — la progression se calcule à partir du patrimoine
+// net réel déjà suivi par le dashboard.
+model Goal {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name         String
+  targetAmount Float
+  targetDate   DateTime?
+
+  createdAt    DateTime @default(now())
+
   @@index([userId])
 }

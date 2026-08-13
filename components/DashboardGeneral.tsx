@@ -13,6 +13,7 @@ import { GROUP_COLORS, MONTH_LABELS } from "@/lib/categories";
 import { Entry, computeMonthTotals, yearTotals, capToCurrentMonth, Balance } from "@/lib/aggregate";
 import { computeWealthEvolution } from "@/lib/wealth";
 import { computeLoanState } from "@/lib/loan";
+import GoalsSection from "@/components/GoalsSection";
 import { savingsRateTrendInsight, expenseConcentrationInsight, cashflowStreakInsight, Insight } from "@/lib/insights";
 import { WEALTH_PALETTE, GOLD, POSITIVE, NEGATIVE } from "@/lib/theme";
 
@@ -191,6 +192,11 @@ export default function DashboardGeneral() {
 
   // Patrimoine NET = liquidités + valeur du portefeuille (cours en direct) - dettes restantes
   const totalWealth = (liquidBalance ?? 0) + portfolioValue - totalDebtRemaining;
+  const avgMonthlySavings = useMemo(() => {
+    const last6 = monthTotals.slice(-6);
+    if (last6.length === 0) return 0;
+    return last6.reduce((s, t) => s + t.epargne, 0) / last6.length;
+  }, [monthTotals]);
   const wealthAllocation = [
     { name: "Liquidités", value: Math.max(liquidBalance ?? 0, 0) },
     { name: "Investissements", value: Math.max(portfolioValue, 0) },
@@ -207,6 +213,18 @@ export default function DashboardGeneral() {
 
   return (
     <div className="space-y-12">
+      {/* Rappel de saisie si le mois en cours n'a pas encore été touché */}
+      {!currentMonthTotals && (
+        <div className="card p-4 bg-[#F5F0E6] border-accent/30 flex items-center justify-between">
+          <p className="text-sm text-ink">
+            Tu n'as pas encore saisi {MONTH_LABELS[CURRENT_MONTH - 1]} {CURRENT_YEAR}.
+          </p>
+          <Link href="/input" className="text-sm bg-accent text-white rounded-lg px-4 py-2 font-medium">
+            Saisir ce mois →
+          </Link>
+        </div>
+      )}
+
       {/* Executive Summary */}
       <section className="space-y-4">
         <div>
@@ -316,6 +334,8 @@ export default function DashboardGeneral() {
           </div>
         </div>
       </section>
+
+      <GoalsSection currentWealth={totalWealth} avgMonthlySavings={avgMonthlySavings} />
 
       {/* Comparaisons entre années */}
       <section className="space-y-4">
