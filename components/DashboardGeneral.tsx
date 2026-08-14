@@ -27,7 +27,7 @@ const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--
 export default function DashboardGeneral() {
   const {
     loading, entries, monthTotals, balancesCapped, transactions, privateInvestments, rates,
-    liquidBalance, privateInvestedValue, portfolioValue, totalDebtRemaining, totalWealth, grossAssets, avgMonthlySavings, referenceDate,
+    liquidBalance, listedPortfolioValue, privateInvestedValue, portfolioValue, totalDebtRemaining, totalWealth, grossAssets, avgMonthlySavings, referenceDate,
   } = useWealthSnapshot();
 
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
@@ -53,25 +53,6 @@ export default function DashboardGeneral() {
     [years, monthTotals]
   );
 
-  // Investissements cotés : coût d'acquisition de ce qui est ENCORE détenu (pas une
-  // simple soustraction achats-ventes, qui devient fausse — négative — une fois une
-  // position totalement revendue avec plus-value)
-  const listedInvestedCapital = useMemo(() => {
-    const byTicker = new Map<string, { buyQty: number; buyAmount: number; sellQty: number; currency: string }>();
-    for (const t of transactions) {
-      const cur = byTicker.get(t.ticker) ?? { buyQty: 0, buyAmount: 0, sellQty: 0, currency: t.currency ?? "EUR" };
-      if (t.type === "vente") cur.sellQty += t.quantity;
-      else { cur.buyQty += t.quantity; cur.buyAmount += t.amount; }
-      byTicker.set(t.ticker, cur);
-    }
-    let total = 0;
-    for (const { buyQty, buyAmount, sellQty, currency } of byTicker.values()) {
-      const avgPrice = buyQty > 0 ? buyAmount / buyQty : 0;
-      const remainingQty = Math.max(buyQty - sellQty, 0);
-      total += avgPrice * remainingQty * (rates[currency] ?? 1);
-    }
-    return total;
-  }, [transactions, rates]);
 
   // Évolution du patrimoine total (liquidités + investissements cotés, mois par mois)
   const wealthSeries = useMemo(
@@ -138,14 +119,15 @@ export default function DashboardGeneral() {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <StatTile label="Patrimoine total" value={totalWealth} />
           <StatTile label={`Revenus — ${MONTH_LABELS[CURRENT_MONTH - 1].slice(0, 3)}`} value={currentMonthTotals?.revenus ?? 0} />
-          <StatTile label={`Portefeuille au ${referenceDate.toLocaleDateString("fr-FR")}`} value={portfolioValue} />
+          <StatTile label="Portefeuille (montant investi net)" value={portfolioValue} />
           <StatTile label={`Dépenses — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.depenses ?? 0} />
           <StatTile label={`Épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.epargne ?? 0} />
           <StatTile label={`Taux d'épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.savingsRate ?? 0} isCurrency={false} />
         </div>
         <p className="text-xs text-gray-400">
-          Patrimoine net au {referenceDate.toLocaleDateString("fr-FR")} = liquidités (<Money value={liquidBalance ?? 0} />) + portefeuille (<Money value={portfolioValue} />)
-          {totalDebtRemaining > 0 && <> − dettes restantes (<Money value={totalDebtRemaining} />)</>}
+          Patrimoine net = liquidités au {referenceDate.toLocaleDateString("fr-FR")} (<Money value={liquidBalance ?? 0} />, dernier solde de fin de mois connu)
+          {" "}+ portefeuille net investi aujourd'hui (<Money value={portfolioValue} />)
+          {totalDebtRemaining > 0 && <> − dettes restantes aujourd'hui (<Money value={totalDebtRemaining} />)</>}
           {totalDebtRemaining > 0 && <>{" · "}<Link href="/dettes" className="text-accent">voir le détail des dettes →</Link></>}
         </p>
 
@@ -222,7 +204,7 @@ export default function DashboardGeneral() {
           <div className="card p-6 flex flex-col justify-center gap-4">
             <div>
               <p className="text-sm text-gray-500">Investissements cotés (actions, ETF)</p>
-              <p className="text-xl font-semibold"><Money value={listedInvestedCapital} /></p>
+              <p className="text-xl font-semibold"><Money value={listedPortfolioValue} /></p>
             </div>
             <div>
               <p className="text-sm text-gray-500">Investissements non cotés (immobilier, prêts...)</p>

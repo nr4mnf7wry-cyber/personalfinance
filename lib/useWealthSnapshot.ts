@@ -12,7 +12,6 @@ const CURRENT_MONTH = new Date().getMonth() + 1;
 // mois clos, pas un mélange entre soldes de fin de mois et cours boursiers du jour).
 const now = new Date();
 const referenceDate = new Date(now.getFullYear(), now.getMonth(), 0);
-const referenceDateStr = `${referenceDate.getFullYear()}-${String(referenceDate.getMonth() + 1).padStart(2, "0")}-${String(referenceDate.getDate()).padStart(2, "0")}`;
 
 export function useWealthSnapshot() {
   const [entriesRaw, setEntriesRaw] = useState<Entry[]>([]);
@@ -21,7 +20,6 @@ export function useWealthSnapshot() {
   const [privateInvestments, setPrivateInvestments] = useState<any[]>([]);
   const [debts, setDebts] = useState<any[]>([]);
   const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });
-  const [prices, setPrices] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,30 +47,6 @@ export function useWealthSnapshot() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions]);
 
-  // Positions détenues à la date de référence (achats - ventes survenus jusque-là)
-  const positions = useMemo(() => {
-    const map = new Map<string, { ticker: string; quantity: number; currency: string }>();
-    for (const t of transactions) {
-      if (new Date(t.date) > referenceDate) continue;
-      const cur = map.get(t.ticker) ?? { ticker: t.ticker, quantity: 0, currency: t.currency ?? "EUR" };
-      cur.quantity += t.type === "vente" ? -t.quantity : t.quantity;
-      map.set(t.ticker, cur);
-    }
-    return Array.from(map.values()).filter((p) => p.quantity > 0.0001);
-  }, [transactions]);
-
-  // Cours de clôture au dernier jour du mois précédent (pas le cours en direct)
-  useEffect(() => {
-    positions.forEach((p) => {
-      if (prices[p.ticker] !== undefined) return;
-      fetch(`/api/stock-price?ticker=${encodeURIComponent(p.ticker)}&date=${referenceDateStr}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => setPrices((prev) => ({ ...prev, [p.ticker]: data?.price ?? -1 })))
-        .catch(() => setPrices((prev) => ({ ...prev, [p.ticker]: -1 })));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positions]);
-
   const entries = useMemo(() => capToCurrentMonth(entriesRaw), [entriesRaw]);
   const balancesCapped = useMemo(
     () => balances.filter((b) => b.year < CURRENT_YEAR || (b.year === CURRENT_YEAR && b.month <= CURRENT_MONTH)),
@@ -84,26 +58,38 @@ export function useWealthSnapshot() {
   const liquidBalance = useMemo(() => {
     const b = balancesCapped.find((b) => b.year === referenceDate.getFullYear() && b.month === referenceDate.getMonth() + 1);
     if (b?.endBalance != null) return b.endBalance;
-    // à défaut, le dernier solde connu avant la date de référence
     const valid = balancesCapped.filter((b) => b.endBalance != null && (b.year < referenceDate.getFullYear() || (b.year === referenceDate.getFullYear() && b.month <= referenceDate.getMonth() + 1)));
     const latest = [...valid].sort((a, b) => (a.year - b.year) || (a.month - b.month)).pop();
     return latest?.endBalance ?? null;
   }, [balancesCapped]);
 
+  // Investissements cotés : MONTANT INVESTI NET (achats - ventes, au coût d'acquisition
+  // de ce qui reste détenu), à AUJOURD'HUI — comme sur /investments. PAS une valorisation
+  // au cours du marché (plus fiable qu'un cours historique par ticker qui peut échouer
+  // silencieusement), et PAS limité au mois précédent (contrairement au solde du compte,
+  // on connaît le portefeuille exact à l'instant présent, pas seulement à la clôture d'un mois).
   const listedPortfolioValue = useMemo(() => {
-    return positions.reduce((s, p) => {
-      const price = prices[p.ticker];
-      const value = price && price > 0 ? price * p.quantity : 0;
-      return s + value * (rates[p.currency] ?? 1);
-    }, 0);
-  }, [positions, prices, rates]);
+    const byTicker = new Map<string, { buyQty: number; buyAmount: number; sellQty: number; currency: string }>();
+    for (const t of transactions) {
+      const cur = byTicker.get(t.ticker) ?? { buyQty: 0, buyAmount: 0, sellQty: 0, currency: t.currency ?? "EUR" };
+      if (t.type === "vente") cur.sellQty += t.quantity;
+      else { cur.buyQty += t.quantity; cur.buyAmount += t.amount; }
+      byTicker.set(t.ticker, cur);
+    }
+    let total = 0;
+    for (const { buyQty, buyAmount, sellQty, currency } of byTicker.values()) {
+      const avgPrice = buyQty > 0 ? buyAmount / buyQty : 0;
+      const remainingQty = Math.max(buyQty - sellQty, 0);
+      total += avgPrice * remainingQty * (rates[currency] ?? 1);
+    }
+    return total;
+  }, [transactions, rates]);
 
-  // Investissements non cotés : dernière valorisation connue AU PLUS TARD à la date
-  // de référence (pas une réévaluation postérieure qui n'était pas encore connue)
+  // Investissements non cotés : dernière valorisation connue, à AUJOURD'HUI — comme
+  // sur /investments (page "Investissements non cotés"), pas limité au mois précédent.
   const privateInvestedValue = useMemo(() => {
     return privateInvestments.filter((inv) => !inv.closedAt).reduce((s, inv) => {
-      const validVals = (inv.valuations ?? []).filter((v: any) => new Date(v.date) <= referenceDate);
-      const last = [...validVals].sort((a: any, b: any) => a.date.localeCompare(b.date)).pop();
+      const last = [...(inv.valuations ?? [])].sort((a: any, b: any) => a.date.localeCompare(b.date)).pop();
       const value = last?.estimatedValue ?? inv.amountInvested;
       return s + value * (rates[inv.currency] ?? 1);
     }, 0);
@@ -111,18 +97,19 @@ export function useWealthSnapshot() {
 
   const portfolioValue = listedPortfolioValue + privateInvestedValue;
 
-  // Solde restant dû des dettes, calculé à la même date de référence pour la cohérence
+  // Solde restant dû des dettes, à AUJOURD'HUI (formule d'amortissement — comme /dettes),
+  // pas limité au mois précédent non plus.
   const totalDebtRemaining = useMemo(() => {
     return debts.reduce((s, d) => {
-      const prepaid = (d.prepayments ?? [])
-        .filter((p: any) => new Date(p.date) <= referenceDate)
-        .reduce((ps: number, p: any) => ps + p.amount, 0);
-      const state = computeLoanState(d.amount, d.interestRatePct, d.durationMonths, d.monthlyPayment, new Date(d.startDate), prepaid, referenceDate);
+      const prepaid = (d.prepayments ?? []).reduce((ps: number, p: any) => ps + p.amount, 0);
+      const state = computeLoanState(d.amount, d.interestRatePct, d.durationMonths, d.monthlyPayment, new Date(d.startDate), prepaid);
       return s + state.remainingBalance;
     }, 0);
   }, [debts]);
 
-  // Patrimoine NET = compte + portefeuille - dettes (au dernier jour du mois précédent)
+  // Patrimoine NET = solde du compte (connu au dernier mois clos, on ne connaît pas le
+  // solde exact d'aujourd'hui sans saisie) + portefeuille et dettes (calculés à l'instant
+  // présent, à partir des transactions/mensualités — ces derniers n'ont pas cette limite).
   const totalWealth = (liquidBalance ?? 0) + portfolioValue - totalDebtRemaining;
   // "Ce que j'ai effectivement" (compte + investissements, SANS déduire les dettes) —
   // utilisé pour les objectifs, qui parlent d'actifs accumulés, pas de patrimoine net
