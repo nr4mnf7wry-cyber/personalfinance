@@ -2,6 +2,7 @@ import { MonthTotals, sum } from "./aggregate";
 
 export type Entry = { year: number; month: number; group: string; category: string; amount: number };
 export type CategoryFlag = { name: string; group: string; isInvestment: boolean; isEssential?: boolean | null };
+export type InvestmentTx = { date: string; amount: number; currency: string; type: string };
 
 const HOUSING_KEYWORDS = ["rent", "loyer", "hypoth", "mortgage", "logement"];
 
@@ -9,7 +10,7 @@ export type Ratios = {
   savingsRate: number;           // épargne / revenus
   fixedToIncome: number;         // dépenses fixes / revenus
   variableToIncome: number;      // dépenses variables / revenus
-  investmentRate: number;        // épargne investie (catégories isInvestment) / revenus
+  investmentRate: number;        // capital net investi en bourse (achats - ventes) / revenus
   housingRatio: number;          // loyer/hypothèque / revenus
   discretionaryExpenses: number; // dépenses marquées "non essentielles" (moyenne période, en €)
   avgMonthlyIncome: number;      // revenu moyen mensuel, en €
@@ -42,7 +43,13 @@ export function judgeRatio(key: keyof Ratios, value: number): "good" | "neutral"
   }
 }
 
-export function computeRatios(monthTotals: MonthTotals[], entries: Entry[], categories: CategoryFlag[]): Ratios {
+export function computeRatios(
+  monthTotals: MonthTotals[],
+  entries: Entry[],
+  categories: CategoryFlag[],
+  transactions: InvestmentTx[] = [],
+  rates: Record<string, number> = { EUR: 1 }
+): Ratios {
   if (monthTotals.length === 0) {
     return {
       savingsRate: 0, fixedToIncome: 0, variableToIncome: 0, investmentRate: 0,
@@ -55,10 +62,12 @@ export function computeRatios(monthTotals: MonthTotals[], entries: Entry[], cate
   const totalVariables = sum(monthTotals.map((t) => t.variables));
   const totalEpargne = sum(monthTotals.map((t) => t.epargne));
 
-  const investmentCategoryNames = new Set(categories.filter((c) => c.isInvestment).map((c) => c.name));
-  const totalInvested = entries
-    .filter((e) => investmentCategoryNames.has(e.category))
-    .reduce((s, e) => s + e.amount, 0);
+  // Capital net investi en bourse sur la période (achats - ventes, converti en EUR) —
+  // basé sur les vraies transactions de /investments, pas sur une catégorie de saisie
+  const totalInvested = transactions.reduce((s, t) => {
+    const signed = t.type === "vente" ? -t.amount : t.amount;
+    return s + signed * (rates[t.currency] ?? 1);
+  }, 0);
 
   const housingCategoryNames = new Set(
     categories.filter((c) => HOUSING_KEYWORDS.some((k) => c.name.toLowerCase().includes(k))).map((c) => c.name)

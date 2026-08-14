@@ -45,6 +45,8 @@ export default function DashboardAnalyse() {
   const [entriesRaw, setEntriesRaw] = useState<Entry[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });
   const [loading, setLoading] = useState(true);
 
   const [selYear, setSelYear] = useState(CURRENT_YEAR);
@@ -57,7 +59,21 @@ export default function DashboardAnalyse() {
     fetch("/api/entries").then((r) => r.json()).then((data) => { setEntriesRaw(data); setLoading(false); });
     fetch("/api/balances").then((r) => r.json()).then(setBalances);
     fetch("/api/categories").then((r) => r.json()).then(setCategories);
+    fetch("/api/investments").then((r) => r.json()).then(setTransactions);
   }, []);
+
+  // Taux de change pour les devises utilisées par les transactions boursières
+  useEffect(() => {
+    const currencies = new Set(transactions.map((t: any) => t.currency).filter((c: string) => c && c !== "EUR"));
+    currencies.forEach((c) => {
+      if (rates[c] !== undefined) return;
+      fetch(`/api/exchange-rate?from=${c}&to=EUR`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => setRates((prev) => ({ ...prev, [c]: data?.rate ?? 1 })))
+        .catch(() => setRates((prev) => ({ ...prev, [c]: 1 })));
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transactions]);
 
   const entries = useMemo(() => capToCurrentMonth(entriesRaw), [entriesRaw]);
   const balancesCapped = useMemo(
@@ -202,12 +218,16 @@ export default function DashboardAnalyse() {
   }, [entries, selParentGroup, categoriesInParentGroup, selYear, selMonth, isWholeYear]);
 
   // Ratios sur l'année sélectionnée
-  const ratios = useMemo(() => computeRatios(yearMonths, entries.filter((e) => e.year === selYear), categories), [yearMonths, entries, selYear, categories]);
+  const ratios = useMemo(() => {
+    const yearTransactions = transactions.filter((t: any) => new Date(t.date).getFullYear() === selYear);
+    return computeRatios(yearMonths, entries.filter((e) => e.year === selYear), categories, yearTransactions, rates);
+  }, [yearMonths, entries, selYear, categories, transactions, rates]);
   const prevYearMonthsForRatios = useMemo(() => monthTotals.filter((t) => t.year === selYear - 1), [monthTotals, selYear]);
-  const prevYearRatios = useMemo(
-    () => prevYearMonthsForRatios.length > 0 ? computeRatios(prevYearMonthsForRatios, entries.filter((e) => e.year === selYear - 1), categories) : null,
-    [prevYearMonthsForRatios, entries, selYear, categories]
-  );
+  const prevYearRatios = useMemo(() => {
+    if (prevYearMonthsForRatios.length === 0) return null;
+    const prevYearTransactions = transactions.filter((t: any) => new Date(t.date).getFullYear() === selYear - 1);
+    return computeRatios(prevYearMonthsForRatios, entries.filter((e) => e.year === selYear - 1), categories, prevYearTransactions, rates);
+  }, [prevYearMonthsForRatios, entries, selYear, categories, transactions, rates]);
 
   if (loading) return <p className="text-gray-500">Chargement...</p>;
   if (entries.length === 0) {
