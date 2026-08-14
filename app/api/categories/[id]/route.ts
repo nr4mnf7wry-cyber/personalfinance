@@ -11,6 +11,7 @@ const schema = z.object({
   isInvestment: z.boolean().optional(),
   isAdjustment: z.boolean().optional(),
   isEssential: z.boolean().nullable().optional(),
+  parentGroup: z.string().nullable().optional(),
   order: z.number().optional(),
 });
 
@@ -42,6 +43,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         ...(d.isInvestment !== undefined ? { isInvestment: d.isInvestment } : {}),
         ...(d.isAdjustment !== undefined ? { isAdjustment: d.isAdjustment } : {}),
         ...(d.isEssential !== undefined ? { isEssential: d.isEssential } : {}),
+        ...(d.parentGroup !== undefined ? { parentGroup: d.parentGroup?.trim() || null } : {}),
         ...(d.order !== undefined ? { order: d.order } : {}),
       },
     });

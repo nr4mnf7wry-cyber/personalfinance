@@ -45,6 +45,7 @@ export default function DashboardAnalyse() {
   const [selMonth, setSelMonth] = useState<number | "all">(CURRENT_MONTH);
   const [selCategory, setSelCategory] = useState<string>("all");
   const [selTag, setSelTag] = useState<string>("all");
+  const [selParentGroup, setSelParentGroup] = useState<string>("all");
 
   useEffect(() => {
     fetch("/api/entries").then((r) => r.json()).then((data) => { setEntriesRaw(data); setLoading(false); });
@@ -73,6 +74,18 @@ export default function DashboardAnalyse() {
     for (const e of entries) for (const t of e.tags ?? []) set.add(t);
     return Array.from(set).sort();
   }, [entries]);
+
+  const parentGroupOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of categories) if (c.parentGroup) set.add(c.parentGroup);
+    return Array.from(set).sort();
+  }, [categories]);
+
+  // Catégories appartenant au regroupement sélectionné (ex: "Car" -> Carfuel, Carinsurance...)
+  const categoriesInParentGroup = useMemo(() => {
+    if (selParentGroup === "all") return [];
+    return categories.filter((c) => c.parentGroup === selParentGroup).map((c) => c.name);
+  }, [categories, selParentGroup]);
 
   const isWholeYear = selMonth === ALL_MONTHS;
   const current = !isWholeYear ? monthTotals.find((t) => t.year === selYear && t.month === selMonth) : undefined;
@@ -157,6 +170,31 @@ export default function DashboardAnalyse() {
     return Array.from(byCategory.entries()).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
   }, [entries, selTag, selYear, selMonth, isWholeYear]);
 
+  // Focus regroupement : tendance de toutes les catégories du regroupement sélectionné
+  const parentGroupTrend = useMemo(() => {
+    if (selParentGroup === "all") return [];
+    return monthTotals.map((t) => {
+      const amt = entries.filter((e) => e.year === t.year && e.month === t.month && categoriesInParentGroup.includes(e.category)).reduce((s, e) => s + e.amount, 0);
+      return { label: `${MONTH_LABELS[t.month - 1].slice(0, 3)} ${t.year}`, montant: amt };
+    });
+  }, [monthTotals, entries, selParentGroup, categoriesInParentGroup]);
+  const parentGroupThisPeriod = useMemo(() => {
+    if (selParentGroup === "all") return 0;
+    const rows = isWholeYear
+      ? entries.filter((e) => e.year === selYear && categoriesInParentGroup.includes(e.category))
+      : entries.filter((e) => e.year === selYear && e.month === selMonth && categoriesInParentGroup.includes(e.category));
+    return rows.reduce((s, e) => s + e.amount, 0);
+  }, [entries, selParentGroup, categoriesInParentGroup, selYear, selMonth, isWholeYear]);
+  const parentGroupBreakdown = useMemo(() => {
+    if (selParentGroup === "all") return [];
+    const rows = isWholeYear
+      ? entries.filter((e) => e.year === selYear && categoriesInParentGroup.includes(e.category))
+      : entries.filter((e) => e.year === selYear && e.month === selMonth && categoriesInParentGroup.includes(e.category));
+    const byCategory = new Map<string, number>();
+    for (const r of rows) byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.amount);
+    return Array.from(byCategory.entries()).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+  }, [entries, selParentGroup, categoriesInParentGroup, selYear, selMonth, isWholeYear]);
+
   // Ratios sur l'année sélectionnée
   const ratios = useMemo(() => computeRatios(yearMonths, entries.filter((e) => e.year === selYear), categories), [yearMonths, entries, selYear, categories]);
 
@@ -185,6 +223,12 @@ export default function DashboardAnalyse() {
           <select value={selTag} onChange={(e) => setSelTag(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
             <option value="all">Tous les tags</option>
             {tagOptions.map((t) => <option key={t} value={t}>#{t}</option>)}
+          </select>
+        )}
+        {parentGroupOptions.length > 0 && (
+          <select value={selParentGroup} onChange={(e) => setSelParentGroup(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <option value="all">Tous les regroupements</option>
+            {parentGroupOptions.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
         )}
       </div>
@@ -240,6 +284,40 @@ export default function DashboardAnalyse() {
                   </li>
                 ))}
                 {tagBreakdown.length === 0 && <li className="text-gray-400 text-sm">Aucune dépense avec ce tag sur la période</li>}
+              </ul>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Focus regroupement */}
+      {selParentGroup !== "all" && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold">Focus — {selParentGroup} ({categoriesInParentGroup.join(", ")})</h2>
+          <StatTile label={isWholeYear ? `Total ${selYear}` : `${MONTH_LABELS[(selMonth as number) - 1]} ${selYear}`} value={parentGroupThisPeriod} />
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="card p-4">
+              <p className="text-sm text-gray-500 mb-2">Évolution de "{selParentGroup}" dans le temps</p>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={parentGroupTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
+                  <Line type="monotone" dataKey="montant" stroke={GOLD} strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="card p-4">
+              <p className="text-sm text-gray-500 mb-2">Répartition par catégorie</p>
+              <ul className="space-y-2">
+                {parentGroupBreakdown.map((r) => (
+                  <li key={r.category} className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                    <span>{r.category}</span>
+                    <Money value={r.amount} />
+                  </li>
+                ))}
+                {parentGroupBreakdown.length === 0 && <li className="text-gray-400 text-sm">Aucune dépense dans ce regroupement sur la période</li>}
               </ul>
             </div>
           </div>

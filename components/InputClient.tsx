@@ -16,12 +16,17 @@ type Category = {
   isInvestment: boolean;
   isAdjustment: boolean;
   isEssential: boolean | null;
+  parentGroup: string | null;
   order: number;
   defaultAmount: number | null;
 };
 
 const now = new Date();
 const GROUPS: Group[] = ["revenus", "fixes", "variables", "epargne"];
+// Épargne n'est plus affichée comme catégorie à saisir manuellement : elle est
+// désormais calculée automatiquement (solde fin - solde début, voir plus haut sur la
+// page). Le suivi des investissements se fait directement sur /investments.
+const DETAILED_GROUPS: Group[] = ["revenus", "fixes", "variables"];
 
 export default function InputClient() {
   const [year, setYear] = useState(now.getFullYear());
@@ -276,6 +281,15 @@ export default function InputClient() {
     refetchCategories();
   }
 
+  async function handleSetParentGroup(cat: Category, value: string) {
+    await fetch(`/api/categories/${cat.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parentGroup: value.trim() || null }),
+    });
+    refetchCategories();
+  }
+
   async function handleGroupChange(categoryId: string, newGroup: Group) {
     await fetch(`/api/categories/${categoryId}`, {
       method: "PATCH",
@@ -327,8 +341,6 @@ export default function InputClient() {
           year={year}
           month={month}
           onChange={(y, m) => { setYear(y); setMonth(m); }}
-          maxYear={now.getFullYear()}
-          maxMonth={now.getMonth() + 1}
         />
 
         {/* Segmented control condensé/détaillé */}
@@ -404,7 +416,7 @@ export default function InputClient() {
         </div>
       ) : (
         <div className="space-y-6">
-          {GROUPS.map((g) => (
+          {DETAILED_GROUPS.map((g) => (
             <div key={g} className="card overflow-visible">
               <div className="px-5 py-3 border-b border-[var(--border)] flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-ink">{GROUP_LABELS[g]}</h3>
@@ -489,14 +501,15 @@ export default function InputClient() {
                             </button>
                           </>
                         )}
-                        {g === "epargne" && (
-                          <button
-                            onClick={() => { handleToggleFlag(c, "isInvestment"); setMenuOpenId(null); }}
-                            className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
-                          >
-                            Liée aux investissements {c.isInvestment && <span className="text-accent">✓</span>}
-                          </button>
-                        )}
+                        <div className="px-4 py-2 border-t border-gray-100">
+                          <label className="text-xs text-gray-400 block mb-1">Regroupement (ex: "Car" pour Carfuel, Carinsurance...)</label>
+                          <input
+                            defaultValue={c.parentGroup ?? ""}
+                            onBlur={(e) => handleSetParentGroup(c, e.target.value)}
+                            placeholder="aucun"
+                            className="w-full text-sm border border-gray-200 rounded px-2 py-1 focus:border-accent focus:outline-none"
+                          />
+                        </div>
                         <button
                           onClick={() => {
                             setStoppingCategoryId(c.id);
@@ -569,25 +582,6 @@ export default function InputClient() {
                   )}
                 </div>
               </div>
-
-              {g === "epargne" && investmentCategory && (amounts[investmentCategory.id] ?? 0) > 0 && (
-                <div className="mx-5 mb-4 p-4 bg-[#F5F0E6] rounded-lg space-y-2">
-                  <p className="text-sm text-ink">
-                    Préciser le titre acheté pour tracer ce montant dans Investissements :
-                  </p>
-                  <div className="flex flex-wrap gap-3">
-                    <input placeholder="Ticker (ex: MSFT)" value={investTicker} onChange={(e) => setInvestTicker(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 w-40 text-sm" />
-                    <input type="number" step="0.01" placeholder="Quantité" value={investQty} onChange={(e) => setInvestQty(e.target.value ? Number(e.target.value) : "")} className="border border-gray-300 rounded-lg px-3 py-1.5 w-32 text-sm" />
-                    <input type="number" step="0.01" placeholder="Prix unitaire" value={investPrice} onChange={(e) => setInvestPrice(e.target.value ? Number(e.target.value) : "")} className="border border-gray-300 rounded-lg px-3 py-1.5 w-32 text-sm" />
-                    <select value={investCurrency} onChange={(e) => setInvestCurrency(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
-                      <option value="EUR">EUR</option>
-                      <option value="USD">USD</option>
-                      <option value="GBP">GBP</option>
-                      <option value="CHF">CHF</option>
-                    </select>
-                  </div>
-                </div>
-              )}
             </div>
           ))}
         </div>

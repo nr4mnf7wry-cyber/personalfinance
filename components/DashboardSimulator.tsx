@@ -22,7 +22,7 @@ function projectWealth(start: number, monthlySavings: number, annualReturnPct: n
 }
 
 export default function DashboardSimulator() {
-  const { loading, totalWealth, avgMonthlySavings } = useWealthSnapshot();
+  const { loading, grossAssets, avgMonthlySavings } = useWealthSnapshot();
 
   const [startWealth, setStartWealth] = useState<number | "">("");
   const [monthlySavings, setMonthlySavings] = useState<number | "">("");
@@ -33,11 +33,11 @@ export default function DashboardSimulator() {
   // Préremplit avec les vraies données une fois chargées, sans écraser une saisie manuelle ensuite
   useEffect(() => {
     if (!loading && !initialized) {
-      setStartWealth(Math.round(totalWealth));
+      setStartWealth(Math.round(grossAssets));
       setMonthlySavings(Math.round(avgMonthlySavings));
       setInitialized(true);
     }
-  }, [loading, initialized, totalWealth, avgMonthlySavings]);
+  }, [loading, initialized, grossAssets, avgMonthlySavings]);
 
   const scenarios = useMemo(() => {
     const start = Number(startWealth) || 0;
@@ -147,7 +147,7 @@ export default function DashboardSimulator() {
       </div>
 
       <p className="text-xs text-gray-400">
-        Le patrimoine de départ et l'épargne mensuelle sont préremplis avec tes chiffres réels (<Money value={totalWealth} /> de patrimoine actuel,
+        Le patrimoine de départ et l'épargne mensuelle sont préremplis avec tes chiffres réels (<Money value={grossAssets} /> de compte + investissement,
         {" "}<Money value={avgMonthlySavings} />/mois d'épargne moyenne sur les 6 derniers mois) — modifie-les librement pour tester d'autres hypothèses.
       </p>
     </div>
