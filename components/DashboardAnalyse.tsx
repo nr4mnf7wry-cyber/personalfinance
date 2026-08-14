@@ -9,12 +9,12 @@ import {
 import Link from "next/link";
 import StatTile from "@/components/StatTile";
 import { Money } from "@/components/BlurToggle";
-import { MONTH_LABELS } from "@/lib/categories";
+import { MONTH_LABELS, GROUP_COLORS } from "@/lib/categories";
 import {
   Entry, computeMonthTotals, topExpenses, expensesByCategory, yoyByCategory, momByCategory,
   movingAverage, ytdCumulative, yearTotals, capToCurrentMonth, Balance, sum,
 } from "@/lib/aggregate";
-import { computeRatios, judgeRatio } from "@/lib/ratios";
+import { computeRatios, judgeRatio, computeIncomeAllocation } from "@/lib/ratios";
 import { CATEGORICAL_PALETTE, SLATE, GOLD, POSITIVE, NEGATIVE, INK } from "@/lib/theme";
 
 const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", boxShadow: "0 4px 16px rgba(18,35,63,0.08)" };
@@ -228,6 +228,11 @@ export default function DashboardAnalyse() {
     const prevYearTransactions = transactions.filter((t: any) => new Date(t.date).getFullYear() === selYear - 1);
     return computeRatios(prevYearMonthsForRatios, entries.filter((e) => e.year === selYear - 1), categories, prevYearTransactions, rates);
   }, [prevYearMonthsForRatios, entries, selYear, categories, transactions, rates]);
+
+  const incomeAllocation = useMemo(() => {
+    const yearTransactions = transactions.filter((t: any) => new Date(t.date).getFullYear() === selYear);
+    return computeIncomeAllocation(yearMonths, yearTransactions, rates);
+  }, [yearMonths, selYear, transactions, rates]);
 
   if (loading) return <p className="text-gray-500">Chargement...</p>;
   if (entries.length === 0) {
@@ -480,6 +485,36 @@ export default function DashboardAnalyse() {
       {/* Ratios & indicateurs */}
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Ratios & indicateurs — {selYear}</h2>
+
+        {/* Où va chaque euro de revenu — somme toujours à 100% */}
+        <div className="card p-5 space-y-3">
+          <p className="text-sm text-gray-500">Répartition du revenu — {incomeAllocation.totalRevenus > 0 ? "100%" : "aucun revenu sur la période"}</p>
+          {incomeAllocation.totalRevenus > 0 && (
+            <>
+              <div className="h-6 w-full rounded-full overflow-hidden flex">
+                {[
+                  { pct: incomeAllocation.fixedPct, color: GROUP_COLORS.fixes },
+                  { pct: incomeAllocation.variablePct, color: GROUP_COLORS.variables },
+                  { pct: incomeAllocation.investedPct, color: GOLD },
+                  { pct: incomeAllocation.cashSavingsPct, color: POSITIVE },
+                  { pct: Math.abs(incomeAllocation.remainderPct), color: "#c9c2b4" },
+                ].filter((s) => s.pct > 0.3).map((s, i) => (
+                  <div key={i} style={{ width: `${s.pct}%`, backgroundColor: s.color }} title={`${s.pct.toFixed(1)}%`} />
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-600">
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: GROUP_COLORS.fixes }} /> Fixes {incomeAllocation.fixedPct.toFixed(1)}%</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: GROUP_COLORS.variables }} /> Variables {incomeAllocation.variablePct.toFixed(1)}%</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: GOLD }} /> Investi {incomeAllocation.investedPct.toFixed(1)}%</span>
+                <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: POSITIVE }} /> Épargne cash {incomeAllocation.cashSavingsPct.toFixed(1)}%</span>
+                {Math.abs(incomeAllocation.remainderPct) > 0.3 && (
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm inline-block" style={{ backgroundColor: "#c9c2b4" }} /> Écart {incomeAllocation.remainderPct.toFixed(1)}%</span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           {RATIO_DEFS.map((r) => {
             const value = ratios[r.key];

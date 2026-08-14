@@ -98,3 +98,57 @@ export function computeRatios(
     avgCostOfLiving: (totalFixes + totalVariables) / n,
   };
 }
+
+export type IncomeAllocation = {
+  fixedPct: number;
+  variablePct: number;
+  investedPct: number;
+  cashSavingsPct: number; // épargne bancaire NON investie (pour ne pas compter deux fois avec investedPct)
+  remainderPct: number;   // écart résiduel (devrait être ~0 si le solde début/fin est bien suivi chaque mois)
+  fixedAmt: number;
+  variableAmt: number;
+  investedAmt: number;
+  cashSavingsAmt: number;
+  remainderAmt: number;
+  totalRevenus: number;
+};
+
+// Où va chaque euro de revenu : fixes + variables + investi + épargne cash NON investie
+// (+ un écart résiduel, affiché plutôt que masqué). Conçu pour toujours sommer à 100%.
+// L'argent investi a déjà quitté le compte en banque, donc on le SOUSTRAIT de l'épargne
+// bancaire brute pour ne pas le compter deux fois.
+export function computeIncomeAllocation(
+  monthTotals: MonthTotals[],
+  transactions: InvestmentTx[] = [],
+  rates: Record<string, number> = { EUR: 1 }
+): IncomeAllocation {
+  const totalRevenus = sum(monthTotals.map((t) => t.revenus));
+  const totalFixes = sum(monthTotals.map((t) => t.fixes));
+  const totalVariables = sum(monthTotals.map((t) => t.variables));
+  const totalEpargne = sum(monthTotals.map((t) => t.epargne));
+  const totalInvested = transactions.reduce((s, t) => {
+    const signed = t.type === "vente" ? -t.amount : t.amount;
+    return s + signed * (rates[t.currency] ?? 1);
+  }, 0);
+
+  const cashSavings = totalEpargne - totalInvested;
+  const remainder = totalRevenus - totalFixes - totalVariables - totalInvested - cashSavings;
+
+  if (totalRevenus <= 0) {
+    return {
+      fixedPct: 0, variablePct: 0, investedPct: 0, cashSavingsPct: 0, remainderPct: 0,
+      fixedAmt: totalFixes, variableAmt: totalVariables, investedAmt: totalInvested, cashSavingsAmt: cashSavings, remainderAmt: remainder,
+      totalRevenus,
+    };
+  }
+
+  return {
+    fixedPct: (totalFixes / totalRevenus) * 100,
+    variablePct: (totalVariables / totalRevenus) * 100,
+    investedPct: (totalInvested / totalRevenus) * 100,
+    cashSavingsPct: (cashSavings / totalRevenus) * 100,
+    remainderPct: (remainder / totalRevenus) * 100,
+    fixedAmt: totalFixes, variableAmt: totalVariables, investedAmt: totalInvested, cashSavingsAmt: cashSavings, remainderAmt: remainder,
+    totalRevenus,
+  };
+}
