@@ -3,8 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-
-export const SHARING_MODULES = ["entries", "investments", "private_investments", "debts", "accounts", "goals"] as const;
+import { SHARING_MODULES } from "@/lib/sharing";
 
 // GET /api/household/sharing -> mes paramètres de partage, avec valeur par défaut
 // (false = privé) pour les modules que je n'ai pas encore configurés explicitement
