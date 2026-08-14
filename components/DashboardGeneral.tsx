@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -10,9 +10,9 @@ import Link from "next/link";
 import StatTile from "@/components/StatTile";
 import { Money } from "@/components/BlurToggle";
 import { GROUP_COLORS, MONTH_LABELS } from "@/lib/categories";
-import { Entry, computeMonthTotals, yearTotals, capToCurrentMonth, Balance } from "@/lib/aggregate";
+import { yearTotals } from "@/lib/aggregate";
 import { computeWealthEvolution } from "@/lib/wealth";
-import { computeLoanState } from "@/lib/loan";
+import { useWealthSnapshot } from "@/lib/useWealthSnapshot";
 import GoalsSection from "@/components/GoalsSection";
 import { savingsRateTrendInsight, expenseConcentrationInsight, cashflowStreakInsight, Insight } from "@/lib/insights";
 import { WEALTH_PALETTE, GOLD, POSITIVE, NEGATIVE } from "@/lib/theme";
@@ -24,65 +24,11 @@ const WEALTH_COLORS = WEALTH_PALETTE;
 const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", boxShadow: "0 4px 16px rgba(18,35,63,0.08)" };
 
 export default function DashboardGeneral() {
-  const [entriesRaw, setEntriesRaw] = useState<Entry[]>([]);
-  const [balances, setBalances] = useState<Balance[]>([]);
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [privateInvestments, setPrivateInvestments] = useState<any[]>([]);
-  const [debts, setDebts] = useState<any[]>([]);
-  const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });
-  const [prices, setPrices] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
+  const {
+    loading, entries, monthTotals, balancesCapped, transactions, privateInvestments, rates,
+    liquidBalance, privateInvestedValue, portfolioValue, totalDebtRemaining, totalWealth, avgMonthlySavings,
+  } = useWealthSnapshot();
 
-  useEffect(() => {
-    fetch("/api/entries").then((r) => r.json()).then((data) => { setEntriesRaw(data); setLoading(false); });
-    fetch("/api/balances").then((r) => r.json()).then(setBalances);
-    fetch("/api/investments").then((r) => r.json()).then(setTransactions);
-    fetch("/api/private-investments").then((r) => r.json()).then(setPrivateInvestments);
-    fetch("/api/debts").then((r) => r.json()).then(setDebts);
-  }, []);
-
-  // Taux de change pour toutes les devises utilisées par les transactions cotées
-  useEffect(() => {
-    const currencies = new Set(transactions.map((t) => t.currency).filter((c: string) => c && c !== "EUR"));
-    currencies.forEach((c) => {
-      if (rates[c] !== undefined) return;
-      fetch(`/api/exchange-rate?from=${c}&to=EUR`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => setRates((prev) => ({ ...prev, [c]: data?.rate ?? 1 })))
-        .catch(() => setRates((prev) => ({ ...prev, [c]: 1 })));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transactions]);
-
-  // Positions nettes détenues (achats - ventes) par ticker, pour la valeur live du portefeuille
-  const positions = useMemo(() => {
-    const map = new Map<string, { ticker: string; quantity: number; currency: string }>();
-    for (const t of transactions) {
-      const cur = map.get(t.ticker) ?? { ticker: t.ticker, quantity: 0, currency: t.currency ?? "EUR" };
-      cur.quantity += t.type === "vente" ? -t.quantity : t.quantity;
-      map.set(t.ticker, cur);
-    }
-    return Array.from(map.values()).filter((p) => p.quantity > 0.0001);
-  }, [transactions]);
-
-  // Cours actuels pour chaque position détenue
-  useEffect(() => {
-    positions.forEach((p) => {
-      if (prices[p.ticker] !== undefined) return;
-      fetch(`/api/stock-price?ticker=${encodeURIComponent(p.ticker)}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => setPrices((prev) => ({ ...prev, [p.ticker]: data?.price ?? -1 })))
-        .catch(() => setPrices((prev) => ({ ...prev, [p.ticker]: -1 })));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [positions]);
-
-  const entries = useMemo(() => capToCurrentMonth(entriesRaw), [entriesRaw]);
-  const balancesCapped = useMemo(
-    () => balances.filter((b) => b.year < CURRENT_YEAR || (b.year === CURRENT_YEAR && b.month <= CURRENT_MONTH)),
-    [balances]
-  );
-  const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped), [entries, balancesCapped]);
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
 
   // Le résumé exécutif s'appuie sur le dernier mois CLOS (mois précédent) pour dépenses/épargne/taux
@@ -126,42 +72,12 @@ export default function DashboardGeneral() {
     return total;
   }, [transactions, rates]);
 
-  // Investissements non cotés : dernière valeur estimée connue pour chacun,
-  // en excluant ceux qui ont été clôturés (l'argent reçu doit être ajouté au
-  // solde en banque manuellement — sinon il serait compté deux fois)
-  const privateInvestedValue = useMemo(() => {
-    return privateInvestments.filter((inv) => !inv.closedAt).reduce((s, inv) => {
-      const last = [...(inv.valuations ?? [])].sort((a: any, b: any) => a.date.localeCompare(b.date)).pop();
-      const value = last?.estimatedValue ?? inv.amountInvested;
-      return s + value * (rates[inv.currency] ?? 1);
-    }, 0);
-  }, [privateInvestments, rates]);
-
-  const investedCapital = listedInvestedCapital + privateInvestedValue;
-
-  // Valeur live du portefeuille coté (cours actuels x quantité détenue), converti EUR
-  const listedPortfolioValue = useMemo(() => {
-    return positions.reduce((s, p) => {
-      const price = prices[p.ticker];
-      const value = price && price > 0 ? price * p.quantity : 0;
-      return s + value * (rates[p.currency] ?? 1);
-    }, 0);
-  }, [positions, prices, rates]);
-  const portfolioValue = listedPortfolioValue + privateInvestedValue;
-
-  const liquidBalance = useMemo(() => {
-    const valid = balancesCapped.filter((b) => b.endBalance != null);
-    const latest = [...valid].sort((a, b) => (a.year - b.year) || (a.month - b.month)).pop();
-    return latest?.endBalance ?? null;
-  }, [balancesCapped]);
-
   // Évolution du patrimoine total (liquidités + investissements cotés, mois par mois)
   const wealthSeries = useMemo(
     () => computeWealthEvolution(balancesCapped, transactions, rates),
     [balancesCapped, transactions, rates]
   );
 
-  // Évolution du cashflow (revenus / dépenses / net) sur toute la période
   const cashflowSeries = useMemo(
     () => monthTotals.map((t) => ({
       label: `${MONTH_LABELS[t.month - 1].slice(0, 3)} ${t.year}`,
@@ -179,24 +95,8 @@ export default function DashboardGeneral() {
       cashflowStreakInsight(monthTotals),
     ];
     return list.filter((i): i is Insight => i !== null);
-  }, [monthTotals, donutData]);
+  }, [monthTotals, donutData, lastClosed]);
 
-  // Solde restant dû total sur toutes les dettes (net des remboursements anticipés)
-  const totalDebtRemaining = useMemo(() => {
-    return debts.reduce((s, d) => {
-      const prepaid = (d.prepayments ?? []).reduce((ps: number, p: any) => ps + p.amount, 0);
-      const state = computeLoanState(d.amount, d.interestRatePct, d.durationMonths, d.monthlyPayment, new Date(d.startDate), prepaid);
-      return s + state.remainingBalance;
-    }, 0);
-  }, [debts]);
-
-  // Patrimoine NET = liquidités + valeur du portefeuille (cours en direct) - dettes restantes
-  const totalWealth = (liquidBalance ?? 0) + portfolioValue - totalDebtRemaining;
-  const avgMonthlySavings = useMemo(() => {
-    const last6 = monthTotals.slice(-6);
-    if (last6.length === 0) return 0;
-    return last6.reduce((s, t) => s + t.epargne, 0) / last6.length;
-  }, [monthTotals]);
   const wealthAllocation = [
     { name: "Liquidités", value: Math.max(liquidBalance ?? 0, 0) },
     { name: "Investissements", value: Math.max(portfolioValue, 0) },

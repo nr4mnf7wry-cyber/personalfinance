@@ -24,6 +24,52 @@ model User {
   debts         Debt[]
   bankAccounts  BankAccount[]
   goals         Goal[]
+
+  // Foyer partagé (couple, famille...) — optionnel, chaque donnée reste possédée
+  // individuellement, seule la VISIBILITÉ pour les autres membres est décidée ici
+  householdId       String?
+  household         Household?        @relation(fields: [householdId], references: [id])
+  sharingSettings   SharingSetting[]
+  createdInvites    HouseholdInvite[]
+}
+
+// Un foyer regroupe plusieurs comptes (ex: un couple) sans fusionner leurs données
+model Household {
+  id        String   @id @default(cuid())
+  name      String?
+  createdAt DateTime @default(now())
+
+  members   User[]
+  invites   HouseholdInvite[]
+}
+
+// Code d'invitation à usage unique pour rejoindre un foyer (pas de système d'email :
+// le créateur partage le code/lien lui-même, par le canal de son choix)
+model HouseholdInvite {
+  id            String    @id @default(cuid())
+  householdId   String
+  household     Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  code          String    @unique
+  createdByUserId String
+  createdBy     User      @relation(fields: [createdByUserId], references: [id])
+  createdAt     DateTime  @default(now())
+  usedAt        DateTime?
+
+  @@index([householdId])
+}
+
+// Paramètre de partage : PAR MODULE, décidé individuellement par chaque membre.
+// visible=true signifie "les autres membres de mon foyer peuvent voir ce module" —
+// jamais le contraire, jamais par défaut (default(false) partout).
+model SharingSetting {
+  id      String  @id @default(cuid())
+  userId  String
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  module  String  // "entries" | "investments" | "debts" | "accounts" | "goals" | "private_investments"
+  visible Boolean @default(false)
+
+  @@unique([userId, module])
 }
 
 // Catégories entièrement personnalisables par utilisateur : chaque nouvel

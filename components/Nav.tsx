@@ -55,6 +55,9 @@ export default function Nav() {
             <span>+</span> Saisie
           </Link>
           <div className="w-px h-5 bg-gray-200" />
+          <Link href="/parametres" className="text-sm text-gray-500 hover:text-gray-800">
+            Paramètres
+          </Link>
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
             className="text-sm text-gray-500 hover:text-gray-800"
