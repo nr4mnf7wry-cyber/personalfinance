@@ -14,6 +14,7 @@ import { yearTotals } from "@/lib/aggregate";
 import { computeWealthEvolution } from "@/lib/wealth";
 import { useWealthSnapshot } from "@/lib/useWealthSnapshot";
 import GoalsSection from "@/components/GoalsSection";
+import HouseholdWealth from "@/components/HouseholdWealth";
 import { savingsRateTrendInsight, expenseConcentrationInsight, cashflowStreakInsight, Insight } from "@/lib/insights";
 import { WEALTH_PALETTE, GOLD, POSITIVE, NEGATIVE } from "@/lib/theme";
 
@@ -234,6 +235,8 @@ export default function DashboardGeneral() {
           </div>
         </div>
       </section>
+
+      <HouseholdWealth myWealth={totalWealth} />
 
       <GoalsSection currentWealth={totalWealth} avgMonthlySavings={avgMonthlySavings} />
 

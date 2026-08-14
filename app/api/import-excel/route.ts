@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 
 type Group = "revenus" | "fixes" | "variables" | "epargne";
 
 // Ce parseur est conçu pour un format "budget annuel" où :
-// - les catégories sont en LIGNES (colonne A), regroupées sous des lignes de section
-//   en gras (Income / Fixed expenses / Variable / Savings)
+// - les catégories sont en LIGNES (colonne A)
 // - les mois sont en COLONNES, avec l'année indiquée au-dessus (souvent une cellule
 //   fusionnée, donc seule la première colonne du bloc de l'année porte la valeur)
-// - la section "Account Split" (soldes de comptes) est ignorée : ce n'est pas une
-//   catégorie de budget
-// Les catégories elles-mêmes sont entièrement libres : n'importe quel libellé sous
-// une section reconnue devient une catégorie, créée automatiquement si elle n'existe
-// pas encore pour l'utilisateur (utile pour démarrer de zéro).
+// Deux variantes supportées :
+// - AVEC des lignes de section en gras (Income / Fixed expenses / Variable / Savings)
+//   au-dessus des catégories -> le groupe est pris de la section
+// - SANS section du tout (juste une liste plate de catégories) -> le groupe est
+//   deviné par mots-clés (voir classifyGroup), et l'utilisateur peut corriger
+//   chaque catégorie dans l'aperçu avant de confirmer l'import.
+// La section "Account Split" (soldes de comptes) est ignorée : ce n'est pas une
+// catégorie de budget.
 
 const MONTH_NAMES: Record<string, number> = {
   janvier: 1, january: 1, jan: 1,
@@ -43,6 +44,27 @@ const GROUP_HEADERS: Record<string, Group> = {
 // Sections à ignorer complètement (pas des catégories de budget)
 const IGNORED_SECTIONS = new Set(["account split", "répartition des comptes"]);
 
+// Mots-clés pour deviner le groupe d'une catégorie sans section explicite au-dessus.
+// Inclut quelques marques/fournisseurs belges courants (opérateurs telecom, mutuelles,
+// assureurs) en plus des mots génériques. Reste une SUPPOSITION, corrigible ensuite.
+const REVENUE_KEYWORDS = ["salary", "salaire", "income", "revenu", "wage", "freelance", "bonus", "remboursement", "refund", "pension", "loyer percu", "loyer perçu"];
+const SAVINGS_KEYWORDS = ["saving", "épargne", "epargne", "investment", "investissement", "retirement"];
+const FIXED_KEYWORDS = [
+  "rent", "loyer", "hypoth", "mortgage", "credit", "crédit", "pret", "prêt",
+  "insurance", "assurance", "mutuelle", "mutuality",
+  "subscription", "abonnement", "netflix", "spotify", "disney", "prime",
+  "phone", "telephone", "téléphone", "internet", "electric", "électric", "gas", "gaz", "water", "eau",
+  "proximus", "orange", "base", "telenet", "voo", "vivium", "ethias", "axa", "belfius assur",
+];
+
+function classifyGroup(label: string): Group {
+  const n = normalize(label);
+  if (REVENUE_KEYWORDS.some((k) => n.includes(k))) return "revenus";
+  if (SAVINGS_KEYWORDS.some((k) => n.includes(k))) return "epargne";
+  if (FIXED_KEYWORDS.some((k) => n.includes(k))) return "fixes";
+  return "variables"; // valeur par défaut la plus sûre pour une dépense non reconnue
+}
+
 function normalize(s: any) {
   return s?.toString().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim() ?? "";
 }
@@ -50,7 +72,6 @@ function normalize(s: any) {
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Non authentifié" }, { status: 401 });
-  const userId = (session.user as any).id;
 
   const form = await req.formData();
   const file = form.get("file") as File | null;
@@ -90,7 +111,6 @@ export async function POST(req: Request) {
     if (raw != null && num >= 1900 && num <= 2100) lastYear = num;
     columnYears[col] = lastYear;
   }
-  // Si aucune année trouvée du tout, on utilise l'année en cours par défaut
   const fallbackYear = new Date().getFullYear();
 
   // 3. Associer chaque colonne pertinente à { year, month }
@@ -102,11 +122,11 @@ export async function POST(req: Request) {
     }
   });
 
-  // 4. Parcourir les lignes suivantes : détecter les sections, ignorer "Account Split",
-  //    et traiter chaque libellé sous une section reconnue comme une catégorie libre.
+  // 4. Parcourir les lignes suivantes : détecter les sections si présentes, ignorer
+  //    "Account Split", et pour chaque catégorie, utiliser le groupe de la section
+  //    si connu, sinon deviner par mots-clés.
   type ParsedLine = { year: number; month: number; group: Group; category: string; amount: number };
   const parsedLines: ParsedLine[] = [];
-  const skippedLabels = new Set<string>(); // libellés rencontrés avant toute section reconnue
 
   let currentGroup: Group | null = null;
   let ignoring = false;
@@ -127,15 +147,13 @@ export async function POST(req: Request) {
       continue;
     }
     if (ignoring) continue;
-    if (!currentGroup) {
-      skippedLabels.add(label.toString());
-      continue;
-    }
+
+    const group = currentGroup ?? classifyGroup(label.toString());
 
     // Désambiguïsation de "Other" selon le groupe, pour éviter toute confusion
     let categoryName = label.toString().trim();
     if (normalize(categoryName) === "other") {
-      categoryName = currentGroup === "revenus" ? "Other income" : "Other expenses";
+      categoryName = group === "revenus" ? "Other income" : "Other expenses";
     }
 
     for (const { col, year, month } of monthColumns) {
@@ -143,25 +161,17 @@ export async function POST(req: Request) {
       if (raw === null || raw === undefined || raw === "") continue;
       const amount = Number(raw);
       if (Number.isNaN(amount)) continue;
-      parsedLines.push({ year, month, group: currentGroup, category: categoryName, amount });
+      parsedLines.push({ year, month, group, category: categoryName, amount });
     }
   }
 
-  // 5. Créer automatiquement les catégories qui n'existent pas encore pour cet utilisateur
-  const distinctCategories = Array.from(
-    new Map(parsedLines.map((l) => [`${l.group}:${l.category}`, { group: l.group, category: l.category }])).values()
-  );
-  const existing = await prisma.category.findMany({ where: { userId } });
-  const existingKeys = new Set(existing.map((c) => `${c.group}:${c.name}`));
-  const toCreate = distinctCategories.filter((c) => !existingKeys.has(`${c.group}:${c.category}`));
-  if (toCreate.length > 0) {
-    await prisma.category.createMany({
-      data: toCreate.map((c) => ({ userId, group: c.group, name: c.category })),
-      skipDuplicates: true,
-    });
-  }
+  // 5. Catégories distinctes détectées, avec leur groupe (deviné ou issu d'une section)
+  //    — l'utilisateur pourra corriger chacune avant de confirmer l'import.
+  const categoriesMap = new Map<string, Group>();
+  for (const l of parsedLines) if (!categoriesMap.has(l.category)) categoriesMap.set(l.category, l.group);
+  const categories = Array.from(categoriesMap.entries()).map(([name, group]) => ({ name, group }));
 
-  // 6. Regrouper par (année, mois) pour l'aperçu et la confirmation
+  // 6. Regrouper par (année, mois) pour l'aperçu
   const byMonth = new Map<string, { year: number; month: number; lines: ParsedLine[] }>();
   for (const line of parsedLines) {
     const key = `${line.year}-${line.month}`;
@@ -173,8 +183,7 @@ export async function POST(req: Request) {
   return NextResponse.json({
     monthCount: months.length,
     lineCount: parsedLines.length,
-    categoriesCreated: toCreate.length,
-    unrecognizedLabels: Array.from(skippedLabels),
+    categories,
     months,
   });
 }
