@@ -13,6 +13,18 @@ export default function GoalsSection({ currentWealth, avgMonthlySavings }: { cur
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
+  // Rythme d'épargne utilisé pour la projection : calculé automatiquement sur les 6
+  // derniers mois, mais modifiable librement pour tester d'autres hypothèses.
+  const [savingsRateOverride, setSavingsRateOverride] = useState<number | "">("");
+  const [initialized, setInitialized] = useState(false);
+  useEffect(() => {
+    if (!initialized && avgMonthlySavings !== undefined) {
+      setSavingsRateOverride(Math.round(avgMonthlySavings));
+      setInitialized(true);
+    }
+  }, [avgMonthlySavings, initialized]);
+  const effectiveSavings = savingsRateOverride === "" ? avgMonthlySavings : savingsRateOverride;
+
   function refetch() {
     return fetch("/api/goals").then((r) => r.json()).then((data) => { setGoals(data); setLoading(false); });
   }
@@ -37,12 +49,12 @@ export default function GoalsSection({ currentWealth, avgMonthlySavings }: { cur
     refetch();
   }
 
-  // Projection : au rythme d'épargne moyen actuel, combien de mois pour atteindre l'objectif
+  // Projection : au rythme d'épargne choisi, combien de mois pour atteindre l'objectif
   function projection(target: number) {
     const remaining = target - currentWealth;
     if (remaining <= 0) return { reached: true };
-    if (avgMonthlySavings <= 0) return { reached: false, months: null };
-    const months = Math.ceil(remaining / avgMonthlySavings);
+    if (effectiveSavings <= 0) return { reached: false, months: null };
+    const months = Math.ceil(remaining / effectiveSavings);
     const date = new Date();
     date.setMonth(date.getMonth() + months);
     return { reached: false, months, date };
@@ -57,6 +69,20 @@ export default function GoalsSection({ currentWealth, avgMonthlySavings }: { cur
         <button onClick={() => setShowForm((s) => !s)} className="text-sm bg-accent text-white rounded-lg px-4 py-2 font-medium">
           {showForm ? "Annuler" : "+ Ajouter un objectif"}
         </button>
+      </div>
+
+      <div className="card p-4 flex flex-wrap items-center gap-3">
+        <label className="text-sm text-gray-600">Rythme d'épargne utilisé pour la projection</label>
+        <input
+          type="number" step="10"
+          value={savingsRateOverride}
+          onChange={(e) => setSavingsRateOverride(e.target.value === "" ? "" : Number(e.target.value))}
+          className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-28 text-right tabular-nums"
+        />
+        <span className="text-sm text-gray-500">€/mois</span>
+        <span className="text-xs text-gray-400">
+          (calculé sur tes 6 derniers mois : {avgMonthlySavings.toFixed(0)} €/mois — modifiable pour tester une autre hypothèse)
+        </span>
       </div>
 
       {showForm && (
@@ -102,8 +128,8 @@ export default function GoalsSection({ currentWealth, avgMonthlySavings }: { cur
                   {proj.reached
                     ? "🎉 Objectif atteint"
                     : proj.months != null
-                    ? `Au rythme d'épargne actuel (${avgMonthlySavings.toFixed(0)} €/mois), atteint vers ${proj.date!.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}`
-                    : "Pas assez de recul sur ton épargne pour projeter une date"}
+                    ? `Au rythme choisi (${effectiveSavings.toFixed(0)} €/mois), atteint vers ${proj.date!.toLocaleDateString("fr-FR", { month: "long", year: "numeric" })}`
+                    : "Rythme d'épargne nul ou négatif — impossible de projeter une date"}
                   {g.targetDate && ` · échéance visée : ${new Date(g.targetDate).toLocaleDateString("fr-FR")}`}
                 </p>
               </div>

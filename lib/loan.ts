@@ -14,11 +14,11 @@ export function computeLoanState(
   durationMonths: number,
   monthlyPayment: number,
   startDate: Date,
-  prepayments: number = 0
+  prepayments: number = 0,
+  asOfDate: Date = new Date()
 ): LoanState {
-  const now = new Date();
   const monthsElapsedRaw =
-    (now.getFullYear() - startDate.getFullYear()) * 12 + (now.getMonth() - startDate.getMonth());
+    (asOfDate.getFullYear() - startDate.getFullYear()) * 12 + (asOfDate.getMonth() - startDate.getMonth());
   const monthsElapsed = Math.min(Math.max(monthsElapsedRaw, 0), durationMonths);
   const monthsRemaining = durationMonths - monthsElapsed;
 

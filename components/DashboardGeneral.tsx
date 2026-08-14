@@ -27,7 +27,7 @@ const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--
 export default function DashboardGeneral() {
   const {
     loading, entries, monthTotals, balancesCapped, transactions, privateInvestments, rates,
-    liquidBalance, privateInvestedValue, portfolioValue, totalDebtRemaining, totalWealth, avgMonthlySavings,
+    liquidBalance, privateInvestedValue, portfolioValue, totalDebtRemaining, totalWealth, grossAssets, avgMonthlySavings, referenceDate,
   } = useWealthSnapshot();
 
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
@@ -138,17 +138,16 @@ export default function DashboardGeneral() {
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
           <StatTile label="Patrimoine total" value={totalWealth} />
           <StatTile label={`Revenus — ${MONTH_LABELS[CURRENT_MONTH - 1].slice(0, 3)}`} value={currentMonthTotals?.revenus ?? 0} />
-          <StatTile label="Valeur du portefeuille" value={portfolioValue} />
+          <StatTile label={`Portefeuille au ${referenceDate.toLocaleDateString("fr-FR")}`} value={portfolioValue} />
           <StatTile label={`Dépenses — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.depenses ?? 0} />
           <StatTile label={`Épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.epargne ?? 0} />
           <StatTile label={`Taux d'épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.savingsRate ?? 0} isCurrency={false} />
         </div>
-        {totalDebtRemaining > 0 && (
-          <p className="text-xs text-gray-400">
-            Patrimoine net = liquidités (<Money value={liquidBalance ?? 0} />) + portefeuille (<Money value={portfolioValue} />) − dettes restantes (<Money value={totalDebtRemaining} />)
-            {" · "}<Link href="/dettes" className="text-accent">voir le détail des dettes →</Link>
-          </p>
-        )}
+        <p className="text-xs text-gray-400">
+          Patrimoine net au {referenceDate.toLocaleDateString("fr-FR")} = liquidités (<Money value={liquidBalance ?? 0} />) + portefeuille (<Money value={portfolioValue} />)
+          {totalDebtRemaining > 0 && <> − dettes restantes (<Money value={totalDebtRemaining} />)</>}
+          {totalDebtRemaining > 0 && <>{" · "}<Link href="/dettes" className="text-accent">voir le détail des dettes →</Link></>}
+        </p>
 
         {insights.length > 0 && (
           <div className="card p-5 space-y-2">
@@ -238,7 +237,7 @@ export default function DashboardGeneral() {
 
       <HouseholdWealth myWealth={totalWealth} />
 
-      <GoalsSection currentWealth={totalWealth} avgMonthlySavings={avgMonthlySavings} />
+      <GoalsSection currentWealth={grossAssets} avgMonthlySavings={avgMonthlySavings} />
 
       {/* Comparaisons entre années */}
       <section className="space-y-4">
