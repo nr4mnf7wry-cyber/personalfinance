@@ -40,6 +40,20 @@ export default function DashboardGeneral() {
   const prevYear = CURRENT_MONTH === 1 ? CURRENT_YEAR - 1 : CURRENT_YEAR;
   const lastClosed = monthTotals.find((t) => t.year === prevYear && t.month === prevMonth);
 
+  // Mois avant le dernier clos (pour comparer dépenses/épargne/taux) et mois avant le
+  // mois en cours (pour comparer les revenus) — donne un vrai point de comparaison
+  const beforeLastClosedMonth = prevMonth === 1 ? 12 : prevMonth - 1;
+  const beforeLastClosedYear = prevMonth === 1 ? prevYear - 1 : prevYear;
+  const beforeLastClosed = monthTotals.find((t) => t.year === beforeLastClosedYear && t.month === beforeLastClosedMonth);
+  const beforeCurrentMonth = prevMonth;
+  const beforeCurrentYear = prevYear;
+  const beforeCurrent = monthTotals.find((t) => t.year === beforeCurrentYear && t.month === beforeCurrentMonth);
+
+  function pctDelta(cur: number | undefined, prev: number | undefined): number | null {
+    if (cur === undefined || prev === undefined || !prev) return null;
+    return ((cur - prev) / prev) * 100;
+  }
+
   const donutData = useMemo(() => {
     const rows = entries.filter((e) => e.year === prevYear && e.month === prevMonth && (e.group === "fixes" || e.group === "variables"));
     return rows.map((r) => ({ name: r.category, value: r.amount }));
@@ -59,6 +73,15 @@ export default function DashboardGeneral() {
     () => computeWealthEvolution(balancesCapped, transactions, rates),
     [balancesCapped, transactions, rates]
   );
+  const wealthDelta = useMemo(() => {
+    if (wealthSeries.length < 2) return { total: null, invested: null };
+    const cur = wealthSeries[wealthSeries.length - 1];
+    const prev = wealthSeries[wealthSeries.length - 2];
+    return {
+      total: prev.total ? ((cur.total - prev.total) / Math.abs(prev.total)) * 100 : null,
+      invested: prev.invested ? ((cur.invested - prev.invested) / Math.abs(prev.invested)) * 100 : null,
+    };
+  }, [wealthSeries]);
 
   const cashflowSeries = useMemo(
     () => monthTotals.map((t) => ({
@@ -109,27 +132,21 @@ export default function DashboardGeneral() {
 
       {/* Executive Summary */}
       <section className="space-y-4">
-        <div>
-          <h2 className="text-lg font-semibold">Résumé exécutif</h2>
-          <p className="text-sm text-gray-400">
-            Patrimoine et revenus à aujourd'hui · dépenses, épargne et taux sur {MONTH_LABELS[prevMonth - 1]} {prevYear} (dernier mois clos)
-          </p>
-        </div>
+        <h2 className="text-lg font-semibold">Résumé exécutif</h2>
 
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          <StatTile label="Patrimoine total" value={totalWealth} />
-          <StatTile label={`Revenus — ${MONTH_LABELS[CURRENT_MONTH - 1].slice(0, 3)}`} value={currentMonthTotals?.revenus ?? 0} />
-          <StatTile label="Portefeuille (montant investi net)" value={portfolioValue} />
-          <StatTile label={`Dépenses — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.depenses ?? 0} />
-          <StatTile label={`Épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.epargne ?? 0} />
-          <StatTile label={`Taux d'épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.savingsRate ?? 0} isCurrency={false} />
+          <StatTile label="Patrimoine total" value={totalWealth} delta={wealthDelta.total} />
+          <StatTile label={`Revenus — ${MONTH_LABELS[CURRENT_MONTH - 1].slice(0, 3)}`} value={currentMonthTotals?.revenus ?? 0} delta={pctDelta(currentMonthTotals?.revenus, beforeCurrent?.revenus)} />
+          <StatTile label="Portefeuille (montant investi net)" value={portfolioValue} delta={wealthDelta.invested} />
+          <StatTile label={`Dépenses — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.depenses ?? 0} delta={pctDelta(lastClosed?.depenses, beforeLastClosed?.depenses)} higherIsBetter={false} />
+          <StatTile label={`Épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.epargne ?? 0} delta={pctDelta(lastClosed?.epargne, beforeLastClosed?.epargne)} />
+          <StatTile label={`Taux d'épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.savingsRate ?? 0} isCurrency={false} delta={pctDelta(lastClosed?.savingsRate, beforeLastClosed?.savingsRate)} />
         </div>
-        <p className="text-xs text-gray-400">
-          Patrimoine net = liquidités au {referenceDate.toLocaleDateString("fr-FR")} (<Money value={liquidBalance ?? 0} />, dernier solde de fin de mois connu)
-          {" "}+ portefeuille net investi aujourd'hui (<Money value={portfolioValue} />)
-          {totalDebtRemaining > 0 && <> − dettes restantes aujourd'hui (<Money value={totalDebtRemaining} />)</>}
-          {totalDebtRemaining > 0 && <>{" · "}<Link href="/dettes" className="text-accent">voir le détail des dettes →</Link></>}
-        </p>
+        {totalDebtRemaining > 0 && (
+          <p className="text-xs text-gray-400">
+            Patrimoine net après dettes restantes (<Money value={totalDebtRemaining} />) · <Link href="/dettes" className="text-accent">détail →</Link>
+          </p>
+        )}
 
         {insights.length > 0 && (
           <div className="card p-5 space-y-2">

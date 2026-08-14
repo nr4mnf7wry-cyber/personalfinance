@@ -116,9 +116,8 @@ export function useWealthSnapshot() {
   const grossAssets = (liquidBalance ?? 0) + portfolioValue;
 
   const avgMonthlySavings = useMemo(() => {
-    const last6 = monthTotals.slice(-6);
-    if (last6.length === 0) return 0;
-    return last6.reduce((s, t) => s + t.epargne, 0) / last6.length;
+    if (monthTotals.length === 0) return 0;
+    return monthTotals.reduce((s, t) => s + t.epargne, 0) / monthTotals.length;
   }, [monthTotals]);
 
   return {

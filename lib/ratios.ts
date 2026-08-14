@@ -17,6 +17,31 @@ export type Ratios = {
   avgCostOfLiving: number;       // coût moyen de la vie (fixes + variables), en €
 };
 
+// Seuils de référence usuels en gestion de finances personnelles (règles générales,
+// pas un conseil personnalisé) — utilisés pour juger si un ratio est sain ou non.
+// direction "low" = plus bas est meilleur, "high" = plus haut est meilleur.
+export const RATIO_BENCHMARKS: Partial<Record<keyof Ratios, { good: number; warning: number; direction: "low" | "high" }>> = {
+  savingsRate: { good: 20, warning: 10, direction: "high" },
+  fixedToIncome: { good: 50, warning: 65, direction: "low" },
+  variableToIncome: { good: 30, warning: 45, direction: "low" },
+  investmentRate: { good: 15, warning: 5, direction: "high" },
+  housingRatio: { good: 30, warning: 40, direction: "low" },
+};
+
+export function judgeRatio(key: keyof Ratios, value: number): "good" | "neutral" | "warning" | null {
+  const b = RATIO_BENCHMARKS[key];
+  if (!b) return null;
+  if (b.direction === "high") {
+    if (value >= b.good) return "good";
+    if (value >= b.warning) return "neutral";
+    return "warning";
+  } else {
+    if (value <= b.good) return "good";
+    if (value <= b.warning) return "neutral";
+    return "warning";
+  }
+}
+
 export function computeRatios(monthTotals: MonthTotals[], entries: Entry[], categories: CategoryFlag[]): Ratios {
   if (monthTotals.length === 0) {
     return {

@@ -14,7 +14,7 @@ import {
   Entry, computeMonthTotals, topExpenses, expensesByCategory, yoyByCategory, momByCategory,
   movingAverage, ytdCumulative, yearTotals, capToCurrentMonth, Balance, sum,
 } from "@/lib/aggregate";
-import { computeRatios } from "@/lib/ratios";
+import { computeRatios, judgeRatio } from "@/lib/ratios";
 import { CATEGORICAL_PALETTE, SLATE, GOLD, POSITIVE, NEGATIVE, INK } from "@/lib/theme";
 
 const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", boxShadow: "0 4px 16px rgba(18,35,63,0.08)" };
@@ -23,17 +23,23 @@ const CURRENT_YEAR = now.getFullYear();
 const CURRENT_MONTH = now.getMonth() + 1;
 const ALL_MONTHS = "all";
 
-const RATIO_DEFS: { key: keyof ReturnType<typeof computeRatios>; label: string; isPct: boolean; help: string }[] = [
-  { key: "savingsRate", label: "Savings Rate", isPct: true, help: "Épargne / Revenus" },
-  { key: "fixedToIncome", label: "Fixed Expenses / Income", isPct: true, help: "Dépenses fixes / Revenus" },
-  { key: "variableToIncome", label: "Variable Expenses / Income", isPct: true, help: "Dépenses variables / Revenus" },
-  { key: "investmentRate", label: "Investment Rate", isPct: true, help: "Épargne investie / Revenus" },
-  { key: "housingRatio", label: "Housing Ratio", isPct: true, help: "Loyer/hypothèque / Revenus" },
-  { key: "discretionaryExpenses", label: "Dépenses discrétionnaires", isPct: false, help: "Moyenne mensuelle des dépenses variables" },
-  { key: "avgMonthlyIncome", label: "Revenu moyen mensuel", isPct: false, help: "" },
-  { key: "avgSavings", label: "Épargne moyenne", isPct: false, help: "" },
-  { key: "avgCostOfLiving", label: "Coût moyen de la vie", isPct: false, help: "Fixes + variables, moyenne mensuelle" },
+const RATIO_DEFS: { key: keyof ReturnType<typeof computeRatios>; label: string; isPct: boolean; higherIsBetter: boolean }[] = [
+  { key: "savingsRate", label: "Savings Rate", isPct: true, higherIsBetter: true },
+  { key: "fixedToIncome", label: "Fixed Expenses / Income", isPct: true, higherIsBetter: false },
+  { key: "variableToIncome", label: "Variable Expenses / Income", isPct: true, higherIsBetter: false },
+  { key: "investmentRate", label: "Investment Rate", isPct: true, higherIsBetter: true },
+  { key: "housingRatio", label: "Housing Ratio", isPct: true, higherIsBetter: false },
+  { key: "discretionaryExpenses", label: "Dépenses discrétionnaires", isPct: false, higherIsBetter: false },
+  { key: "avgMonthlyIncome", label: "Revenu moyen mensuel", isPct: false, higherIsBetter: true },
+  { key: "avgSavings", label: "Épargne moyenne", isPct: false, higherIsBetter: true },
+  { key: "avgCostOfLiving", label: "Coût moyen de la vie", isPct: false, higherIsBetter: false },
 ];
+
+const JUDGMENT_STYLE: Record<string, { label: string; className: string }> = {
+  good: { label: "Sain", className: "bg-green-50 text-green" },
+  neutral: { label: "Correct", className: "bg-[#F5F0E6] text-accent" },
+  warning: { label: "À surveiller", className: "bg-red-50 text-red" },
+};
 
 export default function DashboardAnalyse() {
   const [entriesRaw, setEntriesRaw] = useState<Entry[]>([]);
@@ -197,6 +203,11 @@ export default function DashboardAnalyse() {
 
   // Ratios sur l'année sélectionnée
   const ratios = useMemo(() => computeRatios(yearMonths, entries.filter((e) => e.year === selYear), categories), [yearMonths, entries, selYear, categories]);
+  const prevYearMonthsForRatios = useMemo(() => monthTotals.filter((t) => t.year === selYear - 1), [monthTotals, selYear]);
+  const prevYearRatios = useMemo(
+    () => prevYearMonthsForRatios.length > 0 ? computeRatios(prevYearMonthsForRatios, entries.filter((e) => e.year === selYear - 1), categories) : null,
+    [prevYearMonthsForRatios, entries, selYear, categories]
+  );
 
   if (loading) return <p className="text-gray-500">Chargement...</p>;
   if (entries.length === 0) {
@@ -331,7 +342,7 @@ export default function DashboardAnalyse() {
             <StatTile label="Solde net du mois" value={current?.net ?? 0} />
             <StatTile label="Taux d'épargne" value={current?.savingsRate ?? 0} isCurrency={false} />
             <StatTile label="Revenus" value={current?.revenus ?? 0} delta={revenusDelta} />
-            <StatTile label="Dépenses" value={current?.depenses ?? 0} delta={depensesDelta} />
+            <StatTile label="Dépenses" value={current?.depenses ?? 0} delta={depensesDelta} higherIsBetter={false} />
           </div>
 
           <section className="space-y-4">
@@ -429,7 +440,7 @@ export default function DashboardAnalyse() {
 
           <section className="space-y-4">
             <h2 className="text-lg font-semibold">Cumul d'épargne — {selYear} vs {selYear - 1}</h2>
-            <p className="text-xs text-gray-400 -mt-3">Épargne réelle cumulée depuis janvier (solde fin − solde début, additionné mois après mois)</p>
+            <p className="text-xs text-gray-400 -mt-3">Épargne réelle cumulée depuis janvier</p>
             <div className="card p-4">
               <ResponsiveContainer width="100%" height={260}>
                 <LineChart data={ytdCombined}>
@@ -450,15 +461,33 @@ export default function DashboardAnalyse() {
       <section className="space-y-4">
         <h2 className="text-lg font-semibold">Ratios & indicateurs — {selYear}</h2>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-          {RATIO_DEFS.map((r) => (
-            <div key={r.key} className="card p-4">
-              <p className="text-sm text-gray-500">{r.label}</p>
-              <p className="text-xl font-semibold">
-                {r.isPct ? `${ratios[r.key].toFixed(1)}%` : <Money value={ratios[r.key]} />}
-              </p>
-              {r.help && <p className="text-xs text-gray-400 mt-1">{r.help}</p>}
-            </div>
-          ))}
+          {RATIO_DEFS.map((r) => {
+            const value = ratios[r.key];
+            const judgment = r.isPct ? judgeRatio(r.key, value) : null;
+            const prevValue = prevYearRatios ? prevYearRatios[r.key] : null;
+            const delta = prevValue != null ? value - prevValue : null;
+            const deltaFavorable = delta != null ? (r.higherIsBetter ? delta >= 0 : delta <= 0) : null;
+            return (
+              <div key={r.key} className="card p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-500">{r.label}</p>
+                  {judgment && (
+                    <span className={`text-xs px-2 py-0.5 rounded ${JUDGMENT_STYLE[judgment].className}`}>
+                      {JUDGMENT_STYLE[judgment].label}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xl font-semibold mt-1">
+                  {r.isPct ? `${value.toFixed(1)}%` : <Money value={value} />}
+                </p>
+                {delta != null && Math.abs(delta) > 0.05 && (
+                  <p className={`text-xs mt-1 ${deltaFavorable ? "text-green" : "text-red"}`}>
+                    {delta >= 0 ? "↑" : "↓"} {r.isPct ? `${Math.abs(delta).toFixed(1)} pt` : <Money value={Math.abs(delta)} />} vs {selYear - 1}
+                  </p>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
     </div>

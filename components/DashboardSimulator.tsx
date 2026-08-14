@@ -64,12 +64,7 @@ export default function DashboardSimulator() {
 
   return (
     <div className="space-y-8">
-      <div className="card p-5">
-        <h2 className="text-lg font-semibold mb-1">Simulateur de trajectoire patrimoniale</h2>
-        <p className="text-sm text-gray-500">
-          Projection illustrative — pas une prévision garantie. Trois hypothèses de rendement pour donner une fourchette plutôt qu'un faux sentiment de précision.
-        </p>
-      </div>
+      <h2 className="text-lg font-semibold">Simulateur de trajectoire patrimoniale</h2>
 
       <div className="card p-5 grid grid-cols-2 md:grid-cols-4 gap-4">
         <div>
@@ -145,11 +140,6 @@ export default function DashboardSimulator() {
           </LineChart>
         </ResponsiveContainer>
       </div>
-
-      <p className="text-xs text-gray-400">
-        Le patrimoine de départ et l'épargne mensuelle sont préremplis avec tes chiffres réels (<Money value={grossAssets} /> de compte + investissement,
-        {" "}<Money value={avgMonthlySavings} />/mois d'épargne moyenne sur les 6 derniers mois) — modifie-les librement pour tester d'autres hypothèses.
-      </p>
     </div>
   );
 }
