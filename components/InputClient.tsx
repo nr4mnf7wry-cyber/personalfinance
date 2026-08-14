@@ -15,6 +15,7 @@ type Category = {
   expiresAt: string | null;
   isInvestment: boolean;
   isAdjustment: boolean;
+  isEssential: boolean | null;
   order: number;
   defaultAmount: number | null;
 };
@@ -28,6 +29,7 @@ export default function InputClient() {
   const [detailed, setDetailed] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [amounts, setAmounts] = useState<Record<string, number>>({});
+  const [tags, setTags] = useState<Record<string, string[]>>({});
   const [startBalance, setStartBalance] = useState<number | "">("");
   const [endBalance, setEndBalance] = useState<number | "">("");
   const [investTicker, setInvestTicker] = useState("");
@@ -104,23 +106,28 @@ export default function InputClient() {
       fetch(`/api/balances?year=${prevYear}&month=${prevMonth}`).then((r) => r.json()),
     ]).then(([currentData, prevData, balanceData, prevBalanceData]: [any[], any[], any[], any[]]) => {
       const map: Record<string, number> = {};
+      const tagMap: Record<string, string[]> = {};
       for (const c of categories) {
         const own = currentData.find((e) => e.category === c.name && e.group === c.group && !e.subCategory);
         if (own) {
           // le mois sélectionné a déjà été saisi -> on affiche SES propres valeurs
           map[c.id] = own.amount;
+          tagMap[c.id] = own.tags ?? [];
         } else if (c.group === "fixes") {
           // nouveau mois : seules les dépenses fixes se pré-remplissent (elles ne changent pas).
           // S'il n'y a encore aucun historique (ex: dette tout juste créée), on part du
           // montant par défaut connu (ex: la mensualité) plutôt que de 0.
           const prev = prevData.find((e) => e.category === c.name && e.group === c.group && !e.subCategory);
           map[c.id] = prev?.amount ?? c.defaultAmount ?? 0;
+          tagMap[c.id] = []; // les tags ne se reportent jamais d'un mois à l'autre
         } else {
           // revenus / variables / épargne : toujours vierge sur un nouveau mois
           map[c.id] = 0;
+          tagMap[c.id] = [];
         }
       }
       setAmounts(map);
+      setTags(tagMap);
 
       const b = balanceData[0];
       const prevB = prevBalanceData[0];
@@ -163,6 +170,7 @@ export default function InputClient() {
       category: c.name,
       subCategory: null,
       amount: c.isAdjustment ? adjustmentAmount : Math.round((amounts[c.id] ?? 0) * 100) / 100,
+      tags: tags[c.id] ?? [],
       ...(c.isInvestment && investTicker && investQty && investPrice
         ? { investment: { ticker: investTicker, quantity: Number(investQty), unitPrice: Number(investPrice), currency: investCurrency } }
         : {}),
@@ -197,7 +205,7 @@ export default function InputClient() {
     const t = setTimeout(() => { saveNow(); }, 900);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [amounts, startBalance, endBalance, investTicker, investQty, investPrice, investCurrency, adjustmentAmount, ready]);
+  }, [amounts, tags, startBalance, endBalance, investTicker, investQty, investPrice, investCurrency, adjustmentAmount, ready]);
 
   async function handleAddCategory(group: Group) {
     const name = newCatName[group].trim();
@@ -255,6 +263,15 @@ export default function InputClient() {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ [flag]: !cat[flag] }),
+    });
+    refetchCategories();
+  }
+
+  async function handleSetEssential(cat: Category, value: boolean | null) {
+    await fetch(`/api/categories/${cat.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isEssential: value }),
     });
     refetchCategories();
   }
@@ -415,6 +432,16 @@ export default function InputClient() {
                       {c.isInvestment && <span className="text-xs bg-[#F5F0E6] text-accent rounded px-1.5 py-0.5">investissement</span>}
                     </div>
 
+                    {(g === "fixes" || g === "variables") && (
+                      <input
+                        placeholder="tags..."
+                        value={(tags[c.id] ?? []).join(", ")}
+                        onChange={(e) => setTags((t) => ({ ...t, [c.id]: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }))}
+                        title="Tags libres, séparés par des virgules (ex: vacances, cadeaux)"
+                        className="text-xs text-gray-500 bg-transparent border border-transparent hover:border-gray-200 rounded px-1.5 py-1 w-28 focus:border-gray-300 focus:outline-none placeholder:text-gray-300"
+                      />
+                    )}
+
                     {c.isAdjustment ? (
                       <span className="w-28 text-right text-sm text-gray-500 italic tabular-nums">
                         <Money value={adjustmentAmount} />
@@ -445,6 +472,22 @@ export default function InputClient() {
                           >
                             Catégorie d'ajustement auto {c.isAdjustment && <span className="text-accent">✓</span>}
                           </button>
+                        )}
+                        {(g === "fixes" || g === "variables") && (
+                          <>
+                            <button
+                              onClick={() => { handleSetEssential(c, c.isEssential === true ? null : true); setMenuOpenId(null); }}
+                              className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
+                            >
+                              Dépense essentielle {c.isEssential === true && <span className="text-accent">✓</span>}
+                            </button>
+                            <button
+                              onClick={() => { handleSetEssential(c, c.isEssential === false ? null : false); setMenuOpenId(null); }}
+                              className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
+                            >
+                              Dépense discrétionnaire {c.isEssential === false && <span className="text-accent">✓</span>}
+                            </button>
+                          </>
                         )}
                         {g === "epargne" && (
                           <button

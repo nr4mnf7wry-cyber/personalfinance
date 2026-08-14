@@ -6,6 +6,7 @@ export type Entry = {
   group: Group;
   category: string;
   amount: number;
+  tags?: string[];
 };
 
 export type MonthTotals = {

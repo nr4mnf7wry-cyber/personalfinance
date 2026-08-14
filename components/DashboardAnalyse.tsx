@@ -44,6 +44,7 @@ export default function DashboardAnalyse() {
   const [selYear, setSelYear] = useState(CURRENT_YEAR);
   const [selMonth, setSelMonth] = useState<number | "all">(CURRENT_MONTH);
   const [selCategory, setSelCategory] = useState<string>("all");
+  const [selTag, setSelTag] = useState<string>("all");
 
   useEffect(() => {
     fetch("/api/entries").then((r) => r.json()).then((data) => { setEntriesRaw(data); setLoading(false); });
@@ -65,6 +66,12 @@ export default function DashboardAnalyse() {
   const categoryOptions = useMemo(() => {
     const names = new Set(entries.filter((e) => e.group === "fixes" || e.group === "variables").map((e) => e.category));
     return Array.from(names).sort();
+  }, [entries]);
+
+  const tagOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of entries) for (const t of e.tags ?? []) set.add(t);
+    return Array.from(set).sort();
   }, [entries]);
 
   const isWholeYear = selMonth === ALL_MONTHS;
@@ -125,6 +132,31 @@ export default function DashboardAnalyse() {
     return rows.reduce((s, e) => s + e.amount, 0);
   }, [entries, selCategory, selYear, isWholeYear, prevY, prevM]);
 
+  // Focus tag : tendance du tag sélectionné sur toute la période connue
+  const tagTrend = useMemo(() => {
+    if (selTag === "all") return [];
+    return monthTotals.map((t) => {
+      const amt = entries.filter((e) => e.year === t.year && e.month === t.month && (e.tags ?? []).includes(selTag)).reduce((s, e) => s + e.amount, 0);
+      return { label: `${MONTH_LABELS[t.month - 1].slice(0, 3)} ${t.year}`, montant: amt };
+    });
+  }, [monthTotals, entries, selTag]);
+  const tagThisPeriod = useMemo(() => {
+    if (selTag === "all") return 0;
+    const rows = isWholeYear
+      ? entries.filter((e) => e.year === selYear && (e.tags ?? []).includes(selTag))
+      : entries.filter((e) => e.year === selYear && e.month === selMonth && (e.tags ?? []).includes(selTag));
+    return rows.reduce((s, e) => s + e.amount, 0);
+  }, [entries, selTag, selYear, selMonth, isWholeYear]);
+  const tagBreakdown = useMemo(() => {
+    if (selTag === "all") return [];
+    const rows = isWholeYear
+      ? entries.filter((e) => e.year === selYear && (e.tags ?? []).includes(selTag))
+      : entries.filter((e) => e.year === selYear && e.month === selMonth && (e.tags ?? []).includes(selTag));
+    const byCategory = new Map<string, number>();
+    for (const r of rows) byCategory.set(r.category, (byCategory.get(r.category) ?? 0) + r.amount);
+    return Array.from(byCategory.entries()).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
+  }, [entries, selTag, selYear, selMonth, isWholeYear]);
+
   // Ratios sur l'année sélectionnée
   const ratios = useMemo(() => computeRatios(yearMonths, entries.filter((e) => e.year === selYear), categories), [yearMonths, entries, selYear, categories]);
 
@@ -149,6 +181,12 @@ export default function DashboardAnalyse() {
           <option value="all">Toutes catégories</option>
           {categoryOptions.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
+        {tagOptions.length > 0 && (
+          <select value={selTag} onChange={(e) => setSelTag(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+            <option value="all">Tous les tags</option>
+            {tagOptions.map((t) => <option key={t} value={t}>#{t}</option>)}
+          </select>
+        )}
       </div>
 
       {/* Focus catégorie */}
@@ -170,6 +208,40 @@ export default function DashboardAnalyse() {
                 <Line type="monotone" dataKey="montant" stroke={GOLD} strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
+          </div>
+        </section>
+      )}
+
+      {/* Focus tag */}
+      {selTag !== "all" && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold">Focus — #{selTag}</h2>
+          <StatTile label={isWholeYear ? `Total ${selYear}` : `${MONTH_LABELS[(selMonth as number) - 1]} ${selYear}`} value={tagThisPeriod} />
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="card p-4">
+              <p className="text-sm text-gray-500 mb-2">Évolution de "#{selTag}" dans le temps</p>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={tagTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
+                  <Line type="monotone" dataKey="montant" stroke={GOLD} strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="card p-4">
+              <p className="text-sm text-gray-500 mb-2">Répartition par catégorie</p>
+              <ul className="space-y-2">
+                {tagBreakdown.map((r) => (
+                  <li key={r.category} className="flex justify-between text-sm border-b border-gray-100 pb-2">
+                    <span>{r.category}</span>
+                    <Money value={r.amount} />
+                  </li>
+                ))}
+                {tagBreakdown.length === 0 && <li className="text-gray-400 text-sm">Aucune dépense avec ce tag sur la période</li>}
+              </ul>
+            </div>
           </div>
         </section>
       )}

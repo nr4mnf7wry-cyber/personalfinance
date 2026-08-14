@@ -57,6 +57,7 @@ const lineSchema = z.object({
   category: z.string().min(1),
   subCategory: z.string().nullable().optional(),
   amount: z.number(),
+  tags: z.array(z.string()).optional(),
   // si présent, alimente/complète une transaction d'investissement
   investment: z
     .object({
@@ -117,15 +118,16 @@ export async function POST(req: Request) {
 
     const entry = await prisma.monthEntry.upsert({
       where: {
-        userId_year_month_category_subCategory: {
+        userId_year_month_group_category_subCategory: {
           userId,
           year,
           month,
+          group: line.group,
           category: line.category,
           subCategory: line.subCategory ?? "",
         },
       },
-      update: { amount: line.amount, ...(transactionId ? { transactionId } : {}) },
+      update: { amount: line.amount, ...(line.tags !== undefined ? { tags: line.tags } : {}), ...(transactionId ? { transactionId } : {}) },
       create: {
         userId,
         year,
@@ -134,6 +136,7 @@ export async function POST(req: Request) {
         category: line.category,
         subCategory: line.subCategory ?? "",
         amount: line.amount,
+        tags: line.tags ?? [],
         ...(transactionId ? { transactionId } : {}),
       },
     });

@@ -100,6 +100,12 @@ model Category {
   // (solde début + revenus - dépenses - solde fin), plutôt que saisi manuellement
   isAdjustment Boolean @default(false)
 
+  // Pour les dépenses (fixes/variables) : essentiel (loyer, nourriture...) vs
+  // discrétionnaire (sorties, shopping...) — alimente le ratio "Dépenses
+  // discrétionnaires" avec une vraie distinction plutôt qu'un raccourci sur le groupe.
+  // null = non classé (compté comme discrétionnaire par défaut, à ajuster soi-même).
+  isEssential  Boolean?
+
   createdAt  DateTime  @default(now())
 
   @@unique([userId, group, name])
@@ -136,6 +142,10 @@ model MonthEntry {
   subCategory  String   @default("") // "" = pas de sous-catégorie (vue condensée)
   amount       Float
 
+  // Tags libres, transversaux (ex: "vacances", "cadeaux") — indépendants du groupe et
+  // de la catégorie, pour analyser une dépense exceptionnelle qui traverse plusieurs postes
+  tags         String[] @default([])
+
   // si la ligne "Investissement" génère une transaction liée
   transactionId String?  @unique
   transaction   Transaction? @relation(fields: [transactionId], references: [id])
@@ -143,7 +153,7 @@ model MonthEntry {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  @@unique([userId, year, month, category, subCategory])
+  @@unique([userId, year, month, group, category, subCategory])
   @@index([userId, year, month])
 }
 

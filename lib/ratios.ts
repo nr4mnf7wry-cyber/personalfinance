@@ -1,7 +1,7 @@
 import { MonthTotals, sum } from "./aggregate";
 
 export type Entry = { year: number; month: number; group: string; category: string; amount: number };
-export type CategoryFlag = { name: string; group: string; isInvestment: boolean };
+export type CategoryFlag = { name: string; group: string; isInvestment: boolean; isEssential?: boolean | null };
 
 const HOUSING_KEYWORDS = ["rent", "loyer", "hypoth", "mortgage", "logement"];
 
@@ -11,7 +11,7 @@ export type Ratios = {
   variableToIncome: number;      // dépenses variables / revenus
   investmentRate: number;        // épargne investie (catégories isInvestment) / revenus
   housingRatio: number;          // loyer/hypothèque / revenus
-  discretionaryExpenses: number; // dépenses variables (moyenne période, en €)
+  discretionaryExpenses: number; // dépenses marquées "non essentielles" (moyenne période, en €)
   avgMonthlyIncome: number;      // revenu moyen mensuel, en €
   avgSavings: number;            // épargne moyenne, en €
   avgCostOfLiving: number;       // coût moyen de la vie (fixes + variables), en €
@@ -42,6 +42,14 @@ export function computeRatios(monthTotals: MonthTotals[], entries: Entry[], cate
     .filter((e) => housingCategoryNames.has(e.category))
     .reduce((s, e) => s + e.amount, 0);
 
+  // Dépenses discrétionnaires = catégories explicitement marquées "non essentielles"
+  // (isEssential === false). Une catégorie non classée (null/undefined) est ignorée
+  // ici plutôt que comptée par défaut, pour ne pas fausser le ratio avant classement.
+  const nonEssentialNames = new Set(categories.filter((c) => c.isEssential === false).map((c) => c.name));
+  const totalDiscretionary = entries
+    .filter((e) => nonEssentialNames.has(e.category))
+    .reduce((s, e) => s + e.amount, 0);
+
   const n = monthTotals.length;
 
   return {
@@ -50,7 +58,7 @@ export function computeRatios(monthTotals: MonthTotals[], entries: Entry[], cate
     variableToIncome: totalRevenus > 0 ? (totalVariables / totalRevenus) * 100 : 0,
     investmentRate: totalRevenus > 0 ? (totalInvested / totalRevenus) * 100 : 0,
     housingRatio: totalRevenus > 0 ? (totalHousing / totalRevenus) * 100 : 0,
-    discretionaryExpenses: totalVariables / n,
+    discretionaryExpenses: totalDiscretionary / n,
     avgMonthlyIncome: totalRevenus / n,
     avgSavings: totalEpargne / n,
     avgCostOfLiving: (totalFixes + totalVariables) / n,
