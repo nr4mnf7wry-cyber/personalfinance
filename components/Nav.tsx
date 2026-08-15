@@ -6,7 +6,7 @@ import { signOut } from "next-auth/react";
 import clsx from "clsx";
 
 // Pages de consultation (regroupées, style onglet classique)
-const viewLinks = [
+const viewLinks: { href: string; label: string; group?: string[] }[] = [
   { href: "/dashboard", label: "Vue d'ensemble" },
   { href: "/explorer", label: "Explorer" },
   { href: "/patrimoine", label: "Patrimoine" },
