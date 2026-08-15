@@ -7,8 +7,7 @@ export default function DashboardPage() {
     <BlurProvider>
       <Nav />
       <main className="max-w-6xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-semibold">Vue d'ensemble</h1>
+        <div className="flex justify-end mb-4">
           <BlurToggleButton />
         </div>
         <DashboardGeneral />

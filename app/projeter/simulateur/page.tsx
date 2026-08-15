@@ -1,6 +1,5 @@
 import Nav from "@/components/Nav";
 import { BlurProvider, BlurToggleButton } from "@/components/BlurToggle";
-import ProjeterTabs from "@/components/ProjeterTabs";
 import DashboardSimulator from "@/components/DashboardSimulator";
 
 export default function ProjeterSimulateurPage() {
@@ -8,11 +7,9 @@ export default function ProjeterSimulateurPage() {
     <BlurProvider>
       <Nav />
       <main className="max-w-6xl mx-auto px-4 py-8">
-        <div className="flex items-center justify-between mb-2">
-          <h1 className="text-2xl font-semibold">Projeter</h1>
+        <div className="flex justify-end mb-4">
           <BlurToggleButton />
         </div>
-        <ProjeterTabs />
         <DashboardSimulator />
       </main>
     </BlurProvider>
