@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -16,6 +17,11 @@ const viewLinks: { href: string; label: string; group?: string[] }[] = [
 export default function Nav() {
   const pathname = usePathname();
   const onInputPage = pathname?.startsWith("/input");
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/admin/is-admin").then((r) => r.json()).then((d) => setIsAdmin(!!d.isAdmin)).catch(() => {});
+  }, []);
 
   return (
     <nav className="border-b border-[var(--border)] bg-white">
@@ -57,6 +63,11 @@ export default function Nav() {
             <span>+</span> Saisie
           </Link>
           <div className="w-px h-5 bg-gray-200" />
+          {isAdmin && (
+            <Link href="/admin" className="text-sm text-gray-500 hover:text-gray-800">
+              Admin
+            </Link>
+          )}
           <Link href="/parametres" className="text-sm text-gray-500 hover:text-gray-800">
             Paramètres
           </Link>

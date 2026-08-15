@@ -20,11 +20,14 @@ export async function GET() {
   }
 }
 
+const ACCOUNT_TYPES = ["fixes", "variables", "epargne_investissement", "loisirs_autres", "autre"] as const;
+
 const schema = z.object({
   name: z.string().min(1),
-  type: z.enum(["courant", "epargne", "investissement", "autre"]).optional(),
+  type: z.enum(ACCOUNT_TYPES).optional(),
   balance: z.number().optional(),
   allocationPct: z.number().nullable().optional(),
+  monthlyBudget: z.number().nullable().optional(),
 });
 
 export async function POST(req: Request) {
@@ -43,9 +46,10 @@ export async function POST(req: Request) {
       data: {
         userId,
         name: d.name,
-        type: d.type ?? "courant",
+        type: d.type ?? "autre",
         balance: d.balance ?? 0,
         allocationPct: d.allocationPct ?? null,
+        monthlyBudget: d.monthlyBudget ?? null,
       },
     });
     return NextResponse.json(account, { status: 201 });

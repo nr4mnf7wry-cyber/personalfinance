@@ -272,9 +272,15 @@ model BankAccount {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   name          String   // ex: "Compte courant Belfius", "Épargne", "Revolut"
-  type          String   @default("courant") // "courant" | "epargne" | "investissement" | "autre"
+  // Rôle du compte dans la répartition mensuelle du revenu :
+  // "fixes" | "variables" | "epargne_investissement" | "loisirs_autres" | "autre"
+  type          String   @default("autre")
   balance       Float    @default(0)
-  allocationPct Float?   // % du salaire routé vers ce compte (optionnel)
+  allocationPct Float?   // % du salaire routé vers ce compte (optionnel, vue d'ensemble)
+  // Montant cible à y virer chaque mois — sert de valeur par défaut pour "loisirs_autres"
+  // (pas de source calculée), et de correction manuelle pour les autres rôles (dont le
+  // montant suggéré se calcule automatiquement à partir du mois précédent).
+  monthlyBudget Float?
   order         Int      @default(0)
 
   updatedAt     DateTime @updatedAt
