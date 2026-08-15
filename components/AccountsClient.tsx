@@ -5,7 +5,8 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recha
 import { Money } from "@/components/BlurToggle";
 import { CATEGORICAL_PALETTE } from "@/lib/theme";
 import { computeMonthTotals, Entry, Balance } from "@/lib/aggregate";
-import { GROUP_LABELS } from "@/lib/categories";
+import { GROUP_LABELS, MONTH_LABELS } from "@/lib/categories";
+import MonthYearPicker from "@/components/MonthYearPicker";
 
 type Account = {
   id: string;
@@ -22,6 +23,8 @@ const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--
 const now = new Date();
 const CURRENT_YEAR = now.getFullYear();
 const CURRENT_MONTH = now.getMonth() + 1;
+const DEFAULT_REF_MONTH = CURRENT_MONTH === 1 ? 12 : CURRENT_MONTH - 1;
+const DEFAULT_REF_YEAR = CURRENT_MONTH === 1 ? CURRENT_YEAR - 1 : CURRENT_YEAR;
 
 export default function AccountsClient() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -35,16 +38,30 @@ export default function AccountsClient() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [overrides, setOverrides] = useState<Record<string, number>>({});
+  // Mois de référence pour la répartition — modifiable, plutôt que figé sur le dernier
+  // mois clos. Contrôle à la fois le revenu à répartir et les montants suggérés.
+  const [refMonth, setRefMonth] = useState(DEFAULT_REF_MONTH);
+  const [refYear, setRefYear] = useState(DEFAULT_REF_YEAR);
 
+  function refetchData() {
+    fetch("/api/entries").then((r) => r.json()).then(setEntries);
+    fetch("/api/balances").then((r) => r.json()).then(setBalances);
+    fetch("/api/investments").then((r) => r.json()).then(setTransactions);
+  }
   function refetch() {
     return fetch("/api/accounts").then((r) => r.json()).then((data) => { setAccounts(data); setLoading(false); });
   }
   useEffect(() => {
     refetch();
     fetch("/api/categories").then((r) => r.json()).then(setCategories);
-    fetch("/api/entries").then((r) => r.json()).then(setEntries);
-    fetch("/api/balances").then((r) => r.json()).then(setBalances);
-    fetch("/api/investments").then((r) => r.json()).then(setTransactions);
+    refetchData();
+
+    // Si des montants ont été modifiés dans la Saisie pendant que cet onglet était
+    // ouvert ailleurs, on récupère les valeurs à jour dès qu'on revient sur cette page.
+    function onFocus() { refetchData(); }
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refetchData(); });
+    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
   useEffect(() => {
@@ -61,11 +78,8 @@ export default function AccountsClient() {
 
   const monthTotals = useMemo(() => computeMonthTotals(entries, balances, transactions, rates), [entries, balances, transactions, rates]);
 
-  const prevMonth = CURRENT_MONTH === 1 ? 12 : CURRENT_MONTH - 1;
-  const prevYear = CURRENT_MONTH === 1 ? CURRENT_YEAR - 1 : CURRENT_YEAR;
-  const lastClosed = monthTotals.find((t) => t.year === prevYear && t.month === prevMonth);
-  const currentMonthTotals = monthTotals.find((t) => t.year === CURRENT_YEAR && t.month === CURRENT_MONTH);
-  const montantAAllouer = currentMonthTotals?.revenus ?? lastClosed?.revenus ?? 0;
+  const refTotals = monthTotals.find((t) => t.year === refYear && t.month === refMonth);
+  const montantAAllouer = refTotals?.revenus ?? 0;
 
   // Catégories cochables : celles de la saisie (fixes, variables, épargne), actives ou non
   const selectableCategories = useMemo(
@@ -96,6 +110,10 @@ export default function AccountsClient() {
       categoryNames: f.categoryNames.includes(name) ? f.categoryNames.filter((c) => c !== name) : [...f.categoryNames, name],
     }));
   }
+
+  useEffect(() => {
+    setOverrides({});
+  }, [refMonth, refYear]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -129,12 +147,12 @@ export default function AccountsClient() {
     refetch();
   }
 
-  // Montant suggéré = somme du dernier mois clos pour les catégories cochées sur ce
-  // compte. Si aucune catégorie n'est cochée, on retombe sur le budget manuel.
+  // Montant suggéré = somme du mois de référence choisi pour les catégories cochées sur
+  // ce compte. Si aucune catégorie n'est cochée, on retombe sur le budget manuel.
   function suggestedAmount(a: Account): number {
     if (!a.categoryNames || a.categoryNames.length === 0) return a.monthlyBudget ?? 0;
     return entries
-      .filter((e) => e.year === prevYear && e.month === prevMonth && a.categoryNames.includes(e.category))
+      .filter((e) => e.year === refYear && e.month === refMonth && a.categoryNames.includes(e.category))
       .reduce((s, e) => s + e.amount, 0);
   }
 
@@ -185,18 +203,21 @@ export default function AccountsClient() {
         <div className="card p-5">
           <p className="text-sm text-gray-500">Montant à allouer</p>
           <p className="text-2xl font-semibold"><Money value={montantAAllouer} /></p>
-          <p className="text-xs text-gray-400 mt-1">Revenus du mois précédent</p>
+          <p className="text-xs text-gray-400 mt-1">Revenus de {MONTH_LABELS[refMonth - 1]} {refYear}</p>
         </div>
       </div>
 
       {/* Répartition du mois */}
       {accounts.length > 0 && (
         <section className="space-y-3">
-          <div>
-            <h2 className="text-lg font-semibold">Répartition du mois</h2>
-            <p className="text-sm text-gray-500">
-              Montants suggérés d'après les catégories cochées sur chaque compte ({lastClosed ? `${lastClosed.month}/${lastClosed.year}` : "dernier mois clos"}) — ajustables, avec le solde restant après chaque virement.
-            </p>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold">Répartition du mois</h2>
+              <p className="text-sm text-gray-500">
+                Montants suggérés d'après les catégories cochées sur chaque compte — ajustables, avec le solde restant après chaque virement.
+              </p>
+            </div>
+            <MonthYearPicker year={refYear} month={refMonth} onChange={(y, m) => { setRefYear(y); setRefMonth(m); }} />
           </div>
           <div className="card overflow-x-auto">
             <table className="min-w-full text-sm">

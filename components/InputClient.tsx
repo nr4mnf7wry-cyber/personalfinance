@@ -254,6 +254,19 @@ export default function InputClient() {
     refetchCategories();
   }
 
+  // Bascule rapide entre dépense fixe et variable, directement depuis la saisie du mois
+  // (jusqu'ici il fallait passer par l'historique pour changer le groupe d'une catégorie)
+  async function handleSwitchFixedVariable(cat: Category) {
+    const newGroup: Group = cat.group === "fixes" ? "variables" : "fixes";
+    await fetch(`/api/categories/${cat.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ group: newGroup }),
+    });
+    setMenuOpenId(null);
+    refetchCategories();
+  }
+
   return (
     <div className="space-y-8">
       {/* Barre d'outils */}
@@ -398,6 +411,14 @@ export default function InputClient() {
 
                     {menuOpenId === c.id && (
                       <div className="absolute right-5 top-10 z-10 card bg-white shadow-lg py-1 w-64 text-sm">
+                        {(g === "fixes" || g === "variables") && (
+                          <button
+                            onClick={() => handleSwitchFixedVariable(c)}
+                            className="w-full text-left px-4 py-2 hover:bg-gray-50 font-medium text-ink"
+                          >
+                            Passer en dépense {g === "fixes" ? "variable" : "fixe"}
+                          </button>
+                        )}
                         {(g === "fixes" || g === "variables") && (
                           <button
                             onClick={() => { handleToggleFlag(c, "isAdjustment"); setMenuOpenId(null); }}
