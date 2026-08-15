@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import clsx from "clsx";
 import NavItem, { NavItem as NavItemType } from "@/components/NavItem";
+import { BlurToggleButton } from "@/components/BlurToggle";
 
 const viewLinks: NavItemType[] = [
   { href: "/dashboard", label: "Vue d'ensemble" },
@@ -78,6 +79,8 @@ export default function Nav() {
           >
             Déconnexion
           </button>
+          <div className="w-px h-5 bg-gray-200" />
+          <BlurToggleButton />
         </div>
       </div>
     </nav>

@@ -1,5 +1,5 @@
 import Nav from "@/components/Nav";
-import { BlurProvider, BlurToggleButton } from "@/components/BlurToggle";
+import { BlurProvider } from "@/components/BlurToggle";
 import HouseholdSettings from "@/components/HouseholdSettings";
 
 export default function ParametresPage() {
@@ -7,10 +7,7 @@ export default function ParametresPage() {
     <BlurProvider>
       <Nav />
       <main className="max-w-6xl mx-auto px-4 py-8 space-y-8">
-        <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Paramètres</h1>
-          <BlurToggleButton />
-        </div>
+        <h1 className="text-2xl font-semibold">Paramètres</h1>
         <HouseholdSettings />
       </main>
     </BlurProvider>

@@ -23,8 +23,8 @@ const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--
 const now = new Date();
 const CURRENT_YEAR = now.getFullYear();
 const CURRENT_MONTH = now.getMonth() + 1;
-const DEFAULT_REF_MONTH = CURRENT_MONTH === 1 ? 12 : CURRENT_MONTH - 1;
-const DEFAULT_REF_YEAR = CURRENT_MONTH === 1 ? CURRENT_YEAR - 1 : CURRENT_YEAR;
+const DEFAULT_TARGET_MONTH = CURRENT_MONTH;
+const DEFAULT_TARGET_YEAR = CURRENT_YEAR;
 
 export default function AccountsClient() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -40,8 +40,12 @@ export default function AccountsClient() {
   const [overrides, setOverrides] = useState<Record<string, number>>({});
   // Mois de référence pour la répartition — modifiable, plutôt que figé sur le dernier
   // mois clos. Contrôle à la fois le revenu à répartir et les montants suggérés.
-  const [refMonth, setRefMonth] = useState(DEFAULT_REF_MONTH);
-  const [refYear, setRefYear] = useState(DEFAULT_REF_YEAR);
+  // Mois qu'on prépare (X) — modifiable. La répartition se base toujours sur les
+  // revenus et dépenses RÉELS du mois précédent (X-1), dérivé automatiquement.
+  const [targetMonth, setTargetMonth] = useState(DEFAULT_TARGET_MONTH);
+  const [targetYear, setTargetYear] = useState(DEFAULT_TARGET_YEAR);
+  const refMonth = targetMonth === 1 ? 12 : targetMonth - 1;
+  const refYear = targetMonth === 1 ? targetYear - 1 : targetYear;
 
   function refetchData() {
     fetch("/api/entries").then((r) => r.json()).then(setEntries);
@@ -113,7 +117,7 @@ export default function AccountsClient() {
 
   useEffect(() => {
     setOverrides({});
-  }, [refMonth, refYear]);
+  }, [targetMonth, targetYear]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -203,7 +207,7 @@ export default function AccountsClient() {
         <div className="card p-5">
           <p className="text-sm text-gray-500">Montant à allouer</p>
           <p className="text-2xl font-semibold"><Money value={montantAAllouer} /></p>
-          <p className="text-xs text-gray-400 mt-1">Revenus de {MONTH_LABELS[refMonth - 1]} {refYear}</p>
+          <p className="text-xs text-gray-400 mt-1">Revenus de {MONTH_LABELS[refMonth - 1]} {refYear} — base pour préparer {MONTH_LABELS[targetMonth - 1]} {targetYear}</p>
         </div>
       </div>
 
@@ -212,12 +216,12 @@ export default function AccountsClient() {
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold">Répartition du mois</h2>
+              <h2 className="text-lg font-semibold">Répartition pour {MONTH_LABELS[targetMonth - 1]} {targetYear}</h2>
               <p className="text-sm text-gray-500">
-                Montants suggérés d'après les catégories cochées sur chaque compte — ajustables, avec le solde restant après chaque virement.
+                Montants suggérés d'après {MONTH_LABELS[refMonth - 1]} {refYear} (mois précédent) et les catégories cochées sur chaque compte — ajustables.
               </p>
             </div>
-            <MonthYearPicker year={refYear} month={refMonth} onChange={(y, m) => { setRefYear(y); setRefMonth(m); }} />
+            <MonthYearPicker year={targetYear} month={targetMonth} onChange={(y, m) => { setTargetYear(y); setTargetMonth(m); }} />
           </div>
           <div className="card overflow-x-auto">
             <table className="min-w-full text-sm">
