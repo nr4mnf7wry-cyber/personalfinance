@@ -384,13 +384,14 @@ export default function InputClient() {
       </div>
 
       {/* Contrôle mensuel : le solde de fin attendu = solde début + revenus du mois
-          précédent - dépenses de ce mois. L'investissement n'entre pas dans ce calcul. */}
+          précédent - dépenses de ce mois, puis ajusté en soustrayant ce qui a été
+          investi ce mois-ci (une sortie du compte au même titre qu'une dépense). */}
       {startBalance !== "" && endBalance !== "" && (() => {
         const depensesThisMonth = totals.fixes + totals.variables;
-        const expectedEndBalance = Number(startBalance) + prevMonthRevenus - depensesThisMonth;
+        const subtotal = Number(startBalance) + prevMonthRevenus - depensesThisMonth;
+        const expectedEndBalance = subtotal - investedThisMonth;
         const ecart = Math.round((Number(endBalance) - expectedEndBalance) * 100) / 100;
         const ok = Math.abs(ecart) < 1;
-        const matchesThisMonth = !ok && investedThisMonth !== 0 && Math.abs(ecart + investedThisMonth) < 1;
         const prevMonthLabel = MONTH_LABELS[(month === 1 ? 12 : month - 1) - 1];
         const rows = [
           { label: "Solde en début de mois (saisi)", value: Number(startBalance) },
@@ -409,6 +410,16 @@ export default function InputClient() {
               ))}
               <div className="flex justify-between font-medium text-ink border-t border-gray-100 pt-1 mt-1">
                 <span>= Solde de fin de mois attendu</span>
+                <span className="tabular-nums"><Money value={subtotal} /></span>
+              </div>
+              {investedThisMonth !== 0 && (
+                <div className="flex justify-between text-gray-600">
+                  <span>− Investi ce mois-ci (bourse + non coté)</span>
+                  <span className="tabular-nums"><Money value={-investedThisMonth} /></span>
+                </div>
+              )}
+              <div className="flex justify-between font-medium text-ink border-t border-gray-100 pt-1 mt-1">
+                <span>= Solde de fin de mois attendu (net des investissements)</span>
                 <span className="tabular-nums"><Money value={expectedEndBalance} /></span>
               </div>
               <div className="flex justify-between text-gray-600">
@@ -420,7 +431,7 @@ export default function InputClient() {
             {investedDetail.length > 0 && (
               <details className="mt-2">
                 <summary className="text-xs text-accent cursor-pointer">
-                  Pour info : {investedDetail.length} mouvement{investedDetail.length > 1 ? "s" : ""} d'investissement ce mois (non compté dans ce contrôle)
+                  Détail des {investedDetail.length} mouvement{investedDetail.length > 1 ? "s" : ""} d'investissement compté{investedDetail.length > 1 ? "s" : ""} ci-dessus
                 </summary>
                 <div className="mt-1 space-y-0.5 pl-2 border-l-2 border-gray-100">
                   {investedDetail.map((d, i) => (
@@ -435,9 +446,7 @@ export default function InputClient() {
             <p className={`mt-2 font-medium ${ok ? "text-green" : "text-amber-600"}`}>
               {ok
                 ? "✓ Le solde saisi correspond à l'attendu"
-                : matchesThisMonth
-                ? `⚠ Écart de ${ecart.toFixed(2)} € — proche du montant investi ce mois (voir le détail ci-dessus). Si c'est bien l'explication, rien à corriger.`
-                : `⚠ Écart de ${ecart > 0 ? "+" : ""}${ecart.toFixed(2)} € entre le solde de fin attendu et celui saisi — vérifie un par un les chiffres ci-dessus (solde début/fin, revenus du mois précédent, dépenses de ce mois)`}
+                : `⚠ Écart de ${ecart > 0 ? "+" : ""}${ecart.toFixed(2)} € entre le solde de fin attendu et celui saisi — vérifie un par un les chiffres ci-dessus (solde début/fin, revenus du mois précédent, dépenses de ce mois, investissements)`}
             </p>
           </div>
         );
