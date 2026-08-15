@@ -476,24 +476,28 @@ export default function InputClient() {
 
               {activeCategories.filter((c) => c.group === g).length > 0 && (
                 <div className="px-5 pt-2 pb-1 flex text-xs text-gray-400 uppercase tracking-wide">
-                  <span className="flex-1">Catégorie</span>
-                  <span className="w-28 text-right mr-8">Montant</span>
+                  <span>Catégorie</span>
+                  <span className="w-24 text-right ml-auto mr-8">Montant</span>
                 </div>
               )}
 
               <div>
                 {activeCategories.filter((c) => c.group === g).map((c) => (
-                  <div key={c.id} className="relative px-5 py-2 flex items-center gap-2 border-t border-gray-50 first:border-t-0 hover:bg-gray-50/60">
-                    <div className="flex-1 flex items-center gap-1.5">
+                  <div key={c.id} className="relative px-5 py-2.5 flex items-center gap-3 border-t border-gray-50 first:border-t-0 hover:bg-gray-50/60">
+                    <div className="flex items-center gap-1.5 shrink-0 max-w-[45%]">
                       <input
                         defaultValue={c.name}
                         onBlur={(e) => handleRenameCategory(c, e.target.value)}
-                        className="text-sm text-gray-700 flex-1 bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 focus:border-gray-300 focus:outline-none"
+                        size={Math.max(c.name.length, 6)}
+                        className="text-sm text-gray-700 bg-transparent border border-transparent hover:border-gray-200 rounded px-1 py-0.5 focus:border-gray-300 focus:outline-none"
                         title="Cliquer pour renommer"
                       />
-                      {c.isAdjustment && <span className="text-xs bg-[#F5F0E6] text-accent rounded px-1.5 py-0.5">ajustement</span>}
-                      {c.isInvestment && <span className="text-xs bg-[#F5F0E6] text-accent rounded px-1.5 py-0.5">investissement</span>}
+                      {c.isAdjustment && <span className="text-xs bg-[#F5F0E6] text-accent rounded px-1.5 py-0.5 shrink-0">ajustement</span>}
+                      {c.isInvestment && <span className="text-xs bg-[#F5F0E6] text-accent rounded px-1.5 py-0.5 shrink-0">investissement</span>}
                     </div>
+
+                    {/* Ligne pointillée façon reçu, comble le vide entre le nom et le montant */}
+                    <div className="flex-1 border-b border-dotted border-gray-200 min-w-[16px]" />
 
                     {(g === "fixes" || g === "variables") && (
                       <input
@@ -501,26 +505,29 @@ export default function InputClient() {
                         value={(tags[c.id] ?? []).join(", ")}
                         onChange={(e) => setTags((t) => ({ ...t, [c.id]: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) }))}
                         title="Tags libres, séparés par des virgules (ex: vacances, cadeaux)"
-                        className="text-xs text-gray-500 bg-transparent border border-transparent hover:border-gray-200 rounded px-1.5 py-1 w-28 focus:border-gray-300 focus:outline-none placeholder:text-gray-300"
+                        className="text-xs text-gray-500 bg-transparent border border-transparent hover:border-gray-200 rounded px-1.5 py-1 w-24 shrink-0 focus:border-gray-300 focus:outline-none placeholder:text-gray-300"
                       />
                     )}
 
                     {c.isAdjustment ? (
-                      <span className="w-28 text-right text-sm text-gray-500 italic tabular-nums">
+                      <span className="w-28 text-right text-sm text-gray-500 italic tabular-nums shrink-0">
                         <Money value={adjustmentAmount} />
                       </span>
                     ) : (
-                      <input
-                        type="number" step="0.01"
-                        value={amounts[c.id] ?? 0}
-                        onChange={(e) => setAmounts((a) => ({ ...a, [c.id]: Number(e.target.value) }))}
-                        className="border border-gray-300 rounded-lg px-3 py-1.5 w-28 text-right text-sm tabular-nums focus:border-accent focus:outline-none"
-                      />
+                      <div className="relative shrink-0">
+                        <input
+                          type="number" step="0.01"
+                          value={amounts[c.id] ?? 0}
+                          onChange={(e) => setAmounts((a) => ({ ...a, [c.id]: Number(e.target.value) }))}
+                          className="no-spinner border border-gray-300 rounded-lg pl-3 pr-6 py-1.5 w-24 text-right text-sm tabular-nums focus:border-accent focus:outline-none"
+                        />
+                        <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">€</span>
+                      </div>
                     )}
 
                     <button
                       onClick={() => setMenuOpenId(menuOpenId === c.id ? null : c.id)}
-                      className="text-gray-300 hover:text-gray-600 w-6 text-center"
+                      className="text-gray-300 hover:text-gray-600 w-5 text-center shrink-0"
                       title="Actions"
                     >
                       ⋯

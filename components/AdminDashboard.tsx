@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
-import { GOLD } from "@/lib/theme";
+import { GOLD, SLATE } from "@/lib/theme";
 
 type UserRow = {
   id: string;
@@ -31,6 +31,11 @@ type Stats = {
   usersWithNoData: number;
   avgMonthsPerActiveUser: number;
   adoption: { investments: number; debts: number; accounts: number; goals: number };
+  financialStats: {
+    sampleSize: number;
+    savingsRateDistribution: { label: string; count: number }[];
+    netWorthDistribution: { label: string; count: number }[];
+  } | null;
   signupsByMonth: { label: string; count: number }[];
   users: UserRow[];
 };
@@ -102,6 +107,40 @@ export default function AdminDashboard() {
           </div>
         </div>
       </div>
+
+      {stats.financialStats ? (
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="card p-4">
+            <p className="text-sm text-gray-500 mb-2">Distribution du taux d'épargne ({stats.financialStats.sampleSize} utilisateurs)</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={stats.financialStats.savingsRateDistribution}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [`${v} utilisateur${v > 1 ? "s" : ""}`, ""]} />
+                <Bar dataKey="count" fill={GOLD} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="card p-4">
+            <p className="text-sm text-gray-500 mb-2">Distribution du patrimoine net (approximatif)</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={stats.financialStats.netWorthDistribution}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(v: number) => [`${v} utilisateur${v > 1 ? "s" : ""}`, ""]} />
+                <Bar dataKey="count" fill={SLATE} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+            <p className="text-xs text-gray-400 mt-1">Coût d'achat, pas la valeur de marché en direct — taux de change ignoré (approximation).</p>
+          </div>
+        </div>
+      ) : (
+        <p className="text-xs text-gray-400 -mt-4">
+          Statistiques financières agrégées masquées : moins de 5 utilisateurs actifs pour l'instant — en dessous de ce seuil, une tranche pourrait être identifiable à une personne précise.
+        </p>
+      )}
 
       <div className="card p-4">
         <p className="text-sm text-gray-500 mb-2">Inscriptions par mois (12 derniers mois)</p>
