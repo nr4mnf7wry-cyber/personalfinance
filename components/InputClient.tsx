@@ -47,6 +47,8 @@ export default function InputClient() {
   const [stoppingCategoryId, setStoppingCategoryId] = useState<string | null>(null);
   const [stopMonthValue, setStopMonthValue] = useState("");
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
+  const [prevMonthRevenus, setPrevMonthRevenus] = useState(0);
+  const [investedThisMonth, setInvestedThisMonth] = useState(0);
 
   function refetchCategories() {
     fetch("/api/categories").then((r) => r.json()).then(setCategories);
@@ -100,6 +102,9 @@ export default function InputClient() {
       setAmounts(map);
       setTags(tagMap);
 
+      // Revenus du mois précédent, pour le contrôle mensuel plus bas
+      setPrevMonthRevenus(prevData.filter((e: any) => e.group === "revenus").reduce((s: number, e: any) => s + e.amount, 0));
+
       const b = balanceData[0];
       const prevB = prevBalanceData[0];
       // le solde de fin du mois précédent devient le solde de début de ce mois-ci,
@@ -111,6 +116,30 @@ export default function InputClient() {
       setTimeout(() => setReady(true), 0);
     });
   }, [year, month, categories.length]);
+
+  // Montant net investi en bourse ce mois-ci, pour le contrôle mensuel (l'argent
+  // investi sort du compte sans être une "dépense" au sens propre)
+  useEffect(() => {
+    Promise.all([
+      fetch("/api/investments").then((r) => r.json()),
+    ]).then(([transactions]: [any[]]) => {
+      const monthTx = transactions.filter((t) => {
+        const d = new Date(t.date);
+        return d.getFullYear() === year && d.getMonth() + 1 === month;
+      });
+      const currencies = Array.from(new Set(monthTx.map((t) => t.currency).filter((c) => c && c !== "EUR")));
+      Promise.all(currencies.map((c) => fetch(`/api/exchange-rate?from=${c}&to=EUR`).then((r) => (r.ok ? r.json() : { rate: 1 })).catch(() => ({ rate: 1 }))))
+        .then((rateResults) => {
+          const rates: Record<string, number> = { EUR: 1 };
+          currencies.forEach((c, i) => { rates[c] = rateResults[i]?.rate ?? 1; });
+          const total = monthTx.reduce((s, t) => {
+            const signed = t.type === "vente" ? -t.amount : t.amount;
+            return s + signed * (rates[t.currency] ?? 1);
+          }, 0);
+          setInvestedThisMonth(total);
+        });
+    });
+  }, [year, month]);
 
   const rawTotals = useMemo(() => {
     const t: Record<Group, number> = { revenus: 0, fixes: 0, variables: 0, epargne: 0 };
@@ -334,6 +363,32 @@ export default function InputClient() {
           </div>
         )}
       </div>
+
+      {/* Contrôle mensuel : le solde ne devrait bouger que du fait des revenus du mois
+          précédent (déjà en banque, à répartir) moins les dépenses de ce mois — l'argent
+          investi ce mois-ci explique légitimement un écart, donc il est isolé à part. */}
+      {startBalance !== "" && endBalance !== "" && (() => {
+        const actualDelta = Number(endBalance) - Number(startBalance);
+        const depensesThisMonth = totals.fixes + totals.variables;
+        const expected = prevMonthRevenus - depensesThisMonth;
+        const correctedActual = actualDelta + investedThisMonth;
+        const ecart = Math.round((correctedActual - expected) * 100) / 100;
+        const ok = Math.abs(ecart) < 1;
+        return (
+          <div className={`card p-4 text-sm ${ok ? "border-green-200" : "border-amber-300"}`}>
+            <p className="font-medium text-ink mb-1">Contrôle mensuel</p>
+            <p className="text-gray-500">
+              Attendu (revenus {MONTH_LABELS[(month === 1 ? 12 : month - 1) - 1]} − dépenses de ce mois) : <Money value={expected} /> · Constaté (solde fin − solde début{investedThisMonth !== 0 ? " + investi ce mois" : ""}) : <Money value={correctedActual} />
+            </p>
+            <p className={`mt-1 font-medium ${ok ? "text-green" : "text-amber-600"}`}>
+              {ok ? "✓ Cohérent" : `⚠ Écart de ${ecart > 0 ? "+" : ""}${ecart.toFixed(2)} € — vérifie qu'aucune dépense ou entrée d'argent n'a été oubliée`}
+            </p>
+            {investedThisMonth !== 0 && (
+              <p className="text-xs text-gray-400 mt-1">dont <Money value={investedThisMonth} /> investi en bourse ce mois-ci</p>
+            )}
+          </div>
+        );
+      })()}
 
       {categories.length === 0 && (
         <p className="text-sm text-gray-500 bg-[#F5F0E6] rounded-lg p-4">
