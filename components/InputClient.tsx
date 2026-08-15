@@ -49,6 +49,7 @@ export default function InputClient() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [prevMonthRevenus, setPrevMonthRevenus] = useState(0);
   const [investedThisMonth, setInvestedThisMonth] = useState(0);
+  const [investedDetail, setInvestedDetail] = useState<{ label: string; amount: number }[]>([]);
 
   function refetchCategories() {
     fetch("/api/categories").then((r) => r.json()).then(setCategories);
@@ -134,19 +135,26 @@ export default function InputClient() {
           const rates: Record<string, number> = { EUR: 1 };
           currencies.forEach((c, i) => { rates[c] = rateResults[i]?.rate ?? 1; });
 
-          const listed = transactions
-            .filter((t) => { const d = new Date(t.date); return d.getFullYear() === year && d.getMonth() + 1 === month; })
-            .reduce((s, t) => s + (t.type === "vente" ? -t.amount : t.amount) * (rates[t.currency] ?? 1), 0);
+          const listedTx = transactions.filter((t) => { const d = new Date(t.date); return d.getFullYear() === year && d.getMonth() + 1 === month; });
+          const listed = listedTx.reduce((s, t) => s + (t.type === "vente" ? -t.amount : t.amount) * (rates[t.currency] ?? 1), 0);
+
           // Création d'un nouvel investissement non coté = argent qui sort du compte (+)
-          const nonListedNew = privateInvestments
-            .filter((p) => { const d = new Date(p.startDate); return d.getFullYear() === year && d.getMonth() + 1 === month; })
-            .reduce((s, p) => s + p.amountInvested * (rates[p.currency] ?? 1), 0);
+          const newPI = privateInvestments.filter((p) => { const d = new Date(p.startDate); return d.getFullYear() === year && d.getMonth() + 1 === month; });
+          const nonListedNew = newPI.reduce((s, p) => s + p.amountInvested * (rates[p.currency] ?? 1), 0);
+
           // Clôture d'un investissement non coté = argent qui REVIENT sur le compte (-),
           // symétrique à une vente d'action
-          const nonListedClosed = privateInvestments
-            .filter((p) => p.closedAt && (() => { const d = new Date(p.closedAt); return d.getFullYear() === year && d.getMonth() + 1 === month; })())
-            .reduce((s, p) => s - (p.closedAmount ?? 0) * (rates[p.currency] ?? 1), 0);
+          const closedPI = privateInvestments.filter((p) => p.closedAt && (() => { const d = new Date(p.closedAt); return d.getFullYear() === year && d.getMonth() + 1 === month; })());
+          const nonListedClosed = closedPI.reduce((s, p) => s - (p.closedAmount ?? 0) * (rates[p.currency] ?? 1), 0);
 
+          setInvestedDetail([
+            ...listedTx.map((t) => ({
+              label: `${t.type === "vente" ? "Vente" : "Achat"} ${t.ticker} (${new Date(t.date).toLocaleDateString("fr-FR")})`,
+              amount: (t.type === "vente" ? -t.amount : t.amount) * (rates[t.currency] ?? 1),
+            })),
+            ...newPI.map((p) => ({ label: `Nouvel investissement "${p.name}" (${new Date(p.startDate).toLocaleDateString("fr-FR")})`, amount: p.amountInvested * (rates[p.currency] ?? 1) })),
+            ...closedPI.map((p) => ({ label: `Clôture "${p.name}" (${new Date(p.closedAt).toLocaleDateString("fr-FR")})`, amount: -(p.closedAmount ?? 0) * (rates[p.currency] ?? 1) })),
+          ]);
           setInvestedThisMonth(listed + nonListedNew + nonListedClosed);
         });
     });
@@ -375,22 +383,19 @@ export default function InputClient() {
         )}
       </div>
 
-      {/* Contrôle mensuel : le solde ne devrait bouger que du fait des revenus du mois
-          précédent (déjà en banque, à répartir) moins les dépenses de ce mois ET moins
-          ce qui a été investi ce mois-ci (une sortie du compte au même titre qu'une
-          dépense). Le constaté reste donc le solde brut, sans aucune correction. */}
+      {/* Contrôle mensuel : le solde de fin attendu = solde début + revenus du mois
+          précédent - dépenses de ce mois. L'investissement n'entre pas dans ce calcul. */}
       {startBalance !== "" && endBalance !== "" && (() => {
         const depensesThisMonth = totals.fixes + totals.variables;
-        const expectedEndBalance = Number(startBalance) + prevMonthRevenus - depensesThisMonth - investedThisMonth;
+        const expectedEndBalance = Number(startBalance) + prevMonthRevenus - depensesThisMonth;
         const ecart = Math.round((Number(endBalance) - expectedEndBalance) * 100) / 100;
         const ok = Math.abs(ecart) < 1;
-        const matchesThisMonth = !ok && investedThisMonth !== 0 && Math.abs(ecart - investedThisMonth) < 1;
+        const matchesThisMonth = !ok && investedThisMonth !== 0 && Math.abs(ecart + investedThisMonth) < 1;
         const prevMonthLabel = MONTH_LABELS[(month === 1 ? 12 : month - 1) - 1];
         const rows = [
           { label: "Solde en début de mois (saisi)", value: Number(startBalance) },
           { label: `+ Revenus de ${prevMonthLabel}`, value: prevMonthRevenus },
           { label: "− Dépenses de ce mois (fixes + variables)", value: -depensesThisMonth },
-          ...(investedThisMonth !== 0 ? [{ label: "− Investi ce mois-ci (bourse + non coté)", value: -investedThisMonth }] : []),
         ];
         return (
           <div className={`card p-4 text-sm ${ok ? "border-green-200" : "border-amber-300"}`}>
@@ -411,11 +416,27 @@ export default function InputClient() {
                 <span className="tabular-nums"><Money value={Number(endBalance)} /></span>
               </div>
             </div>
+
+            {investedDetail.length > 0 && (
+              <details className="mt-2">
+                <summary className="text-xs text-accent cursor-pointer">
+                  Pour info : {investedDetail.length} mouvement{investedDetail.length > 1 ? "s" : ""} d'investissement ce mois (non compté dans ce contrôle)
+                </summary>
+                <div className="mt-1 space-y-0.5 pl-2 border-l-2 border-gray-100">
+                  {investedDetail.map((d, i) => (
+                    <div key={i} className="flex justify-between text-xs text-gray-500">
+                      <span>{d.label}</span>
+                      <span className="tabular-nums"><Money value={d.amount} /></span>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
             <p className={`mt-2 font-medium ${ok ? "text-green" : "text-amber-600"}`}>
               {ok
                 ? "✓ Le solde saisi correspond à l'attendu"
                 : matchesThisMonth
-                ? `⚠ Écart de ${ecart.toFixed(2)} € — pile le montant investi ce mois. Si cet argent ne vient pas du compte suivi ici, l'écart est normal, rien à corriger.`
+                ? `⚠ Écart de ${ecart.toFixed(2)} € — proche du montant investi ce mois (voir le détail ci-dessus). Si c'est bien l'explication, rien à corriger.`
                 : `⚠ Écart de ${ecart > 0 ? "+" : ""}${ecart.toFixed(2)} € entre le solde de fin attendu et celui saisi — vérifie un par un les chiffres ci-dessus (solde début/fin, revenus du mois précédent, dépenses de ce mois)`}
             </p>
           </div>
