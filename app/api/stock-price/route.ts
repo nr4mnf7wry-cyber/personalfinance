@@ -54,11 +54,11 @@ async function getLivePrice(ticker: string) {
       `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}`,
       { next: { revalidate: 60 }, headers: { "User-Agent": "Mozilla/5.0" } }
     );
-    if (!res.ok) return NextResponse.json({ error: "Ticker introuvable" }, { status: 404 });
+    if (!res.ok) return NextResponse.json({ error: "Ticker introuvable — vérifie le suffixe de bourse (ex: .PA Paris, .BR Bruxelles, .AS Amsterdam, .DE Xetra, .L Londres)" }, { status: 404 });
     const data = await res.json();
     const meta = data?.chart?.result?.[0]?.meta;
     if (!meta?.regularMarketPrice) {
-      return NextResponse.json({ error: "Ticker introuvable" }, { status: 404 });
+      return NextResponse.json({ error: "Ticker introuvable — vérifie le suffixe de bourse (ex: .PA Paris, .BR Bruxelles, .AS Amsterdam, .DE Xetra, .L Londres)" }, { status: 404 });
     }
     const price = meta.regularMarketPrice;
     const previousClose = meta.previousClose ?? meta.chartPreviousClose ?? price;

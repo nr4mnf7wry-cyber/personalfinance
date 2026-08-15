@@ -28,7 +28,7 @@ const emptyForm = { date: new Date().toISOString().slice(0, 10), ticker: "", lab
 
 export default function InvestmentsClient() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [prices, setPrices] = useState<Record<string, { price: number; changePercent: number } | null>>({});
+  const [prices, setPrices] = useState<Record<string, { price: number; changePercent: number } | { error: string } | null>>({});
   const [rates, setRates] = useState<Record<string, number>>({ EUR: 1 });
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -146,9 +146,13 @@ export default function InvestmentsClient() {
     positions.filter((p) => p.quantity > 0).forEach((p) => {
       if (prices[p.ticker] !== undefined) return;
       fetch(`/api/stock-price?ticker=${encodeURIComponent(p.ticker)}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => setPrices((prev) => ({ ...prev, [p.ticker]: data ? { price: data.price, changePercent: data.changePercent } : null })))
-        .catch(() => setPrices((prev) => ({ ...prev, [p.ticker]: null })));
+        .then(async (r) => {
+          const data = await r.json().catch(() => null);
+          if (r.ok && data?.price) return { price: data.price, changePercent: data.changePercent };
+          return { error: data?.error ?? "Cours indisponible pour ce ticker" };
+        })
+        .then((result) => setPrices((prev) => ({ ...prev, [p.ticker]: result })))
+        .catch(() => setPrices((prev) => ({ ...prev, [p.ticker]: { error: "Erreur réseau lors de la récupération du cours" } })));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [positions]);
@@ -159,7 +163,8 @@ export default function InvestmentsClient() {
 
   const totalInvested = positions.reduce((s, p) => s + toEur(p.invested, p.currency), 0);
   const totalCurrentValue = positions.reduce((s, p) => {
-    const live = prices[p.ticker]?.price;
+    const result = prices[p.ticker];
+    const live = result && "price" in result ? result.price : undefined;
     const valueInOrigCurrency = live ? live * p.quantity : p.invested;
     return s + toEur(valueInOrigCurrency, p.currency);
   }, 0);
@@ -298,7 +303,9 @@ export default function InvestmentsClient() {
             </thead>
             <tbody>
               {heldPositions.map((p) => {
-                const live = prices[p.ticker];
+                const result = prices[p.ticker];
+                const live = result && "price" in result ? result : null;
+                const priceError = result && "error" in result ? result.error : null;
                 const currentValueOrig = live ? live.price * p.quantity : p.invested;
                 const currentValueEur = toEur(currentValueOrig, p.currency);
                 const investedEur = toEur(p.invested, p.currency);
@@ -312,7 +319,13 @@ export default function InvestmentsClient() {
                     <td className="px-4 py-2 text-right">{p.quantity}</td>
                     <td className="px-4 py-2 text-right">{p.avgPrice.toFixed(2)} {p.currency}</td>
                     <td className="px-4 py-2 text-right">
-                      {live ? `${live.price.toFixed(2)} ${p.currency}` : <span className="text-gray-400">—</span>}
+                      {live ? (
+                        `${live.price.toFixed(2)} ${p.currency}`
+                      ) : priceError ? (
+                        <span className="text-amber-600 cursor-help" title={priceError}>⚠ indisponible</span>
+                      ) : (
+                        <span className="text-gray-400">…</span>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-right"><Money value={currentValueEur} /></td>
                     <td className={`px-4 py-2 text-right ${gain >= 0 ? "text-green" : "text-red"}`}>
