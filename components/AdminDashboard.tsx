@@ -11,7 +11,13 @@ type UserRow = {
   createdAt: string;
   entryCount: number;
   transactionCount: number;
+  monthsTracked: number;
+  usesInvestments: boolean;
+  usesDebts: boolean;
+  usesAccounts: boolean;
+  usesGoals: boolean;
   lastActivity: string | null;
+  activeLast7Days: boolean;
   activeLast30Days: boolean;
 };
 
@@ -20,7 +26,11 @@ type Stats = {
   totalEntries: number;
   totalTransactions: number;
   totalHouseholds: number;
+  activeUsersLast7Days: number;
   activeUsersLast30Days: number;
+  usersWithNoData: number;
+  avgMonthsPerActiveUser: number;
+  adoption: { investments: number; debts: number; accounts: number; goals: number };
   signupsByMonth: { label: string; count: number }[];
   users: UserRow[];
 };
@@ -58,8 +68,8 @@ export default function AdminDashboard() {
           <p className="text-2xl font-semibold">{stats.totalUsers}</p>
         </div>
         <div className="card p-5">
-          <p className="text-sm text-gray-500">Actifs (30 derniers jours)</p>
-          <p className="text-2xl font-semibold">{stats.activeUsersLast30Days}</p>
+          <p className="text-sm text-gray-500">Actifs (7 / 30 derniers jours)</p>
+          <p className="text-2xl font-semibold">{stats.activeUsersLast7Days} <span className="text-base text-gray-400">/ {stats.activeUsersLast30Days}</span></p>
         </div>
         <div className="card p-5">
           <p className="text-sm text-gray-500">Lignes de saisie au total</p>
@@ -68,6 +78,28 @@ export default function AdminDashboard() {
         <div className="card p-5">
           <p className="text-sm text-gray-500">Transactions boursières</p>
           <p className="text-2xl font-semibold">{stats.totalTransactions}</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="card p-5">
+          <p className="text-sm text-gray-500">Inscrits sans aucune saisie</p>
+          <p className="text-2xl font-semibold">{stats.usersWithNoData}</p>
+          <p className="text-xs text-gray-400 mt-1">signe d'un souci d'accroche au démarrage</p>
+        </div>
+        <div className="card p-5">
+          <p className="text-sm text-gray-500">Mois suivis en moyenne (actifs)</p>
+          <p className="text-2xl font-semibold">{stats.avgMonthsPerActiveUser}</p>
+          <p className="text-xs text-gray-400 mt-1">fidélité dans le temps, pas juste un essai</p>
+        </div>
+        <div className="card p-5 md:col-span-1 col-span-2">
+          <p className="text-sm text-gray-500 mb-1">Adoption par fonctionnalité</p>
+          <div className="space-y-1 text-sm">
+            <div className="flex justify-between"><span className="text-gray-500">Investissements</span><span>{stats.adoption.investments}%</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Dettes</span><span>{stats.adoption.debts}%</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Comptes</span><span>{stats.adoption.accounts}%</span></div>
+            <div className="flex justify-between"><span className="text-gray-500">Objectifs</span><span>{stats.adoption.goals}%</span></div>
+          </div>
         </div>
       </div>
 
@@ -91,7 +123,8 @@ export default function AdminDashboard() {
               <th className="px-4 py-2">Utilisateur</th>
               <th className="px-4 py-2">Inscrit le</th>
               <th className="px-4 py-2 text-right">Lignes saisies</th>
-              <th className="px-4 py-2 text-right">Transactions</th>
+              <th className="px-4 py-2 text-right">Mois suivis</th>
+              <th className="px-4 py-2">Fonctionnalités</th>
               <th className="px-4 py-2">Dernière activité</th>
               <th className="px-4 py-2">Statut</th>
             </tr>
@@ -105,7 +138,15 @@ export default function AdminDashboard() {
                 </td>
                 <td className="px-4 py-2 text-gray-500">{new Date(u.createdAt).toLocaleDateString("fr-FR")}</td>
                 <td className="px-4 py-2 text-right">{u.entryCount}</td>
-                <td className="px-4 py-2 text-right">{u.transactionCount}</td>
+                <td className="px-4 py-2 text-right">{u.monthsTracked}</td>
+                <td className="px-4 py-2 text-xs text-gray-500">
+                  {[
+                    u.usesInvestments && "Invest.",
+                    u.usesDebts && "Dettes",
+                    u.usesAccounts && "Comptes",
+                    u.usesGoals && "Objectifs",
+                  ].filter(Boolean).join(", ") || "—"}
+                </td>
                 <td className="px-4 py-2 text-gray-500">
                   {u.lastActivity ? new Date(u.lastActivity).toLocaleDateString("fr-FR") : "Jamais"}
                 </td>
