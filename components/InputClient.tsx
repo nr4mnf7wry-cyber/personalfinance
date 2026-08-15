@@ -385,17 +385,17 @@ export default function InputClient() {
       </div>
 
       {/* Contrôle mensuel : le solde ne devrait bouger que du fait des revenus du mois
-          précédent (déjà en banque, à répartir) moins les dépenses de ce mois — l'argent
-          investi ce mois-ci explique légitimement un écart, donc il est isolé à part. */}
+          précédent (déjà en banque, à répartir) moins les dépenses de ce mois ET moins
+          ce qui a été investi ce mois-ci (une sortie du compte au même titre qu'une
+          dépense). Le constaté reste donc le solde brut, sans aucune correction. */}
       {startBalance !== "" && endBalance !== "" && (() => {
         const actualDelta = Number(endBalance) - Number(startBalance);
         const depensesThisMonth = totals.fixes + totals.variables;
-        const expected = prevMonthRevenus - investedPrevMonth - depensesThisMonth;
-        const correctedActual = actualDelta + investedThisMonth;
-        const ecart = Math.round((correctedActual - expected) * 100) / 100;
+        const expected = prevMonthRevenus - investedPrevMonth - depensesThisMonth - investedThisMonth;
+        const ecart = Math.round((actualDelta - expected) * 100) / 100;
         const ok = Math.abs(ecart) < 1;
         // Si l'écart correspond (à 1€ près) au montant investi ce mois ou le mois
-        // précédent, ma correction s'applique probablement à tort : cet argent n'est
+        // précédent, la soustraction s'applique probablement à tort : cet argent n'est
         // sans doute jamais sorti du compte suivi ici (financé depuis un autre compte).
         const matchesThisMonth = !ok && investedThisMonth !== 0 && Math.abs(ecart - investedThisMonth) < 1;
         const matchesPrevMonth = !ok && investedPrevMonth !== 0 && Math.abs(ecart - investedPrevMonth) < 1;
@@ -404,7 +404,7 @@ export default function InputClient() {
           <div className={`card p-4 text-sm ${ok ? "border-green-200" : "border-amber-300"}`}>
             <p className="font-medium text-ink mb-1">Contrôle mensuel</p>
             <p className="text-gray-500">
-              Attendu (revenus {prevMonthLabel}{investedPrevMonth !== 0 ? ` moins investi en ${prevMonthLabel}` : ""} − dépenses de ce mois) : <Money value={expected} /> · Constaté (solde fin − solde début{investedThisMonth !== 0 ? " + investi ce mois" : ""}) : <Money value={correctedActual} />
+              Attendu (revenus {prevMonthLabel}{investedPrevMonth !== 0 ? ` moins investi en ${prevMonthLabel}` : ""} − dépenses de ce mois{investedThisMonth !== 0 ? " − investi ce mois" : ""}) : <Money value={expected} /> · Constaté (solde fin − solde début) : <Money value={actualDelta} />
             </p>
             <p className={`mt-1 font-medium ${ok ? "text-green" : "text-amber-600"}`}>
               {ok
