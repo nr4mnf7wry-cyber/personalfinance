@@ -15,25 +15,35 @@ export type MonthTotals = {
   revenus: number;
   fixes: number;
   variables: number;
-  epargne: number;
+  epargne: number;      // épargne TOTALE = variation du compte + montant net investi ce mois-là
+  netInvested: number;  // part de l'épargne qui est partie en bourse ce mois-ci (achats - ventes)
   depenses: number; // fixes + variables
   net: number; // revenus - depenses (avant épargne investie)
   savingsRate: number; // epargne / revenus, en %
 };
 
 export type Balance = { year: number; month: number; startBalance: number | null; endBalance: number | null };
+export type InvestmentTx = { date: string; amount: number; currency: string; type: string };
 
 export function monthKey(year: number, month: number) {
   return `${year}-${String(month).padStart(2, "0")}`;
 }
 
 // L'épargne réelle d'un mois = ce qu'il reste effectivement en banque en plus
-// (solde fin - solde début), et non la somme des catégories "épargne" saisies
-// (qui ne reflètent que ce qui a été catégorisé, pas la réalité du compte).
+// (solde fin - solde début) + ce qui a été investi en bourse ce mois-là. L'argent
+// investi n'est pas "dépensé" — il reste à toi, juste sous une autre forme — donc il
+// doit compter comme de l'épargne, pas disparaître du calcul. Symétriquement, une
+// revente qui fait remonter le solde bancaire n'est PAS comptée une deuxième fois
+// (elle a déjà été comptée comme épargne au moment de l'achat initial).
 // Si aucun solde n'est renseigné pour le mois, on retombe sur l'ancien calcul
 // (somme des catégories du groupe "epargne") pour ne pas casser l'historique
 // importé avant la mise en place du suivi de solde.
-export function computeMonthTotals(entries: Entry[], balances: Balance[] = []): MonthTotals[] {
+export function computeMonthTotals(
+  entries: Entry[],
+  balances: Balance[] = [],
+  transactions: InvestmentTx[] = [],
+  rates: Record<string, number> = { EUR: 1 }
+): MonthTotals[] {
   const groups = new Map<string, MonthTotals>();
 
   for (const e of entries) {
@@ -41,7 +51,7 @@ export function computeMonthTotals(entries: Entry[], balances: Balance[] = []): 
     if (!groups.has(key)) {
       groups.set(key, {
         year: e.year, month: e.month,
-        revenus: 0, fixes: 0, variables: 0, epargne: 0,
+        revenus: 0, fixes: 0, variables: 0, epargne: 0, netInvested: 0,
         depenses: 0, net: 0, savingsRate: 0,
       });
     }
@@ -51,13 +61,31 @@ export function computeMonthTotals(entries: Entry[], balances: Balance[] = []): 
 
   const balanceMap = new Map(balances.map((b) => [monthKey(b.year, b.month), b]));
 
+  // Montant net investi (achats - ventes) par mois, converti en EUR
+  const investedByMonth = new Map<string, number>();
+  for (const tx of transactions) {
+    const d = new Date(tx.date);
+    const key = monthKey(d.getFullYear(), d.getMonth() + 1);
+    const signed = tx.type === "vente" ? -tx.amount : tx.amount;
+    investedByMonth.set(key, (investedByMonth.get(key) ?? 0) + signed * (rates[tx.currency] ?? 1));
+  }
+  // S'assurer qu'un mois avec seulement des transactions (mais aucune ligne de saisie)
+  // existe bien dans le résultat, sinon son épargne investie serait invisible
+  for (const key of investedByMonth.keys()) {
+    if (!groups.has(key)) {
+      const [y, m] = key.split("-").map(Number);
+      groups.set(key, { year: y, month: m, revenus: 0, fixes: 0, variables: 0, epargne: 0, netInvested: 0, depenses: 0, net: 0, savingsRate: 0 });
+    }
+  }
+
   const result = Array.from(groups.values()).map((t) => {
     t.depenses = t.fixes + t.variables;
     t.net = t.revenus - t.depenses;
+    t.netInvested = investedByMonth.get(monthKey(t.year, t.month)) ?? 0;
 
     const b = balanceMap.get(monthKey(t.year, t.month));
     if (b && b.startBalance != null && b.endBalance != null) {
-      t.epargne = b.endBalance - b.startBalance;
+      t.epargne = (b.endBalance - b.startBalance) + t.netInvested;
     }
     // sinon : t.epargne reste la somme des catégories "epargne" (calculée plus haut)
 

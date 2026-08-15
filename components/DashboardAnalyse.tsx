@@ -80,7 +80,7 @@ export default function DashboardAnalyse() {
     () => balances.filter((b) => b.year < CURRENT_YEAR || (b.year === CURRENT_YEAR && b.month <= CURRENT_MONTH)),
     [balances]
   );
-  const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped), [entries, balancesCapped]);
+  const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped, transactions, rates), [entries, balancesCapped, transactions, rates]);
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
   const monthOptions = MONTH_LABELS.filter((_, i) => selYear < CURRENT_YEAR || i + 1 <= CURRENT_MONTH);
 

@@ -52,7 +52,7 @@ export function useWealthSnapshot() {
     () => balances.filter((b) => b.year < CURRENT_YEAR || (b.year === CURRENT_YEAR && b.month <= CURRENT_MONTH)),
     [balances]
   );
-  const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped), [entries, balancesCapped]);
+  const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped, transactions, rates), [entries, balancesCapped, transactions, rates]);
 
   // Solde liquide au dernier jour du mois précédent (le solde de fin de ce mois-là)
   const liquidBalance = useMemo(() => {
