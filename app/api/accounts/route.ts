@@ -20,11 +20,9 @@ export async function GET() {
   }
 }
 
-const ACCOUNT_TYPES = ["fixes", "variables", "epargne_investissement", "loisirs_autres", "autre"] as const;
-
 const schema = z.object({
   name: z.string().min(1),
-  type: z.enum(ACCOUNT_TYPES).optional(),
+  categoryNames: z.array(z.string()).optional(),
   balance: z.number().optional(),
   allocationPct: z.number().nullable().optional(),
   monthlyBudget: z.number().nullable().optional(),
@@ -46,7 +44,7 @@ export async function POST(req: Request) {
       data: {
         userId,
         name: d.name,
-        type: d.type ?? "autre",
+        categoryNames: d.categoryNames ?? [],
         balance: d.balance ?? 0,
         allocationPct: d.allocationPct ?? null,
         monthlyBudget: d.monthlyBudget ?? null,

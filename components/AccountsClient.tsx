@@ -5,29 +5,19 @@ import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from "recha
 import { Money } from "@/components/BlurToggle";
 import { CATEGORICAL_PALETTE } from "@/lib/theme";
 import { computeMonthTotals, Entry, Balance } from "@/lib/aggregate";
+import { GROUP_LABELS } from "@/lib/categories";
 
 type Account = {
   id: string;
   name: string;
-  type: string;
+  categoryNames: string[];
   balance: number;
   allocationPct: number | null;
   monthlyBudget: number | null;
   order: number;
 };
 
-// Le rôle du compte dans la répartition mensuelle du revenu — chaque compte sert une
-// enveloppe précise du budget, comme une répartition manuelle en fin de mois.
-const TYPE_LABELS: Record<string, string> = {
-  fixes: "Dépenses fixes",
-  variables: "Dépenses variables",
-  epargne_investissement: "Épargne + Investissement",
-  loisirs_autres: "Loisirs & autres",
-  autre: "Autre",
-};
-const TYPES = Object.keys(TYPE_LABELS);
-
-const emptyForm = { name: "", type: "autre", balance: "", allocationPct: "", monthlyBudget: "" };
+const emptyForm = { name: "", balance: "", allocationPct: "", monthlyBudget: "", categoryNames: [] as string[] };
 const TOOLTIP_STYLE = { fontSize: 13, borderRadius: 8, border: "1px solid var(--border)", boxShadow: "0 4px 16px rgba(18,35,63,0.08)" };
 const now = new Date();
 const CURRENT_YEAR = now.getFullYear();
@@ -35,6 +25,7 @@ const CURRENT_MONTH = now.getMonth() + 1;
 
 export default function AccountsClient() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [balances, setBalances] = useState<Balance[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -50,6 +41,7 @@ export default function AccountsClient() {
   }
   useEffect(() => {
     refetch();
+    fetch("/api/categories").then((r) => r.json()).then(setCategories);
     fetch("/api/entries").then((r) => r.json()).then(setEntries);
     fetch("/api/balances").then((r) => r.json()).then(setBalances);
     fetch("/api/investments").then((r) => r.json()).then(setTransactions);
@@ -69,19 +61,26 @@ export default function AccountsClient() {
 
   const monthTotals = useMemo(() => computeMonthTotals(entries, balances, transactions, rates), [entries, balances, transactions, rates]);
 
-  // Référence pour la répartition : le dernier mois clos (données réelles et complètes)
   const prevMonth = CURRENT_MONTH === 1 ? 12 : CURRENT_MONTH - 1;
   const prevYear = CURRENT_MONTH === 1 ? CURRENT_YEAR - 1 : CURRENT_YEAR;
   const lastClosed = monthTotals.find((t) => t.year === prevYear && t.month === prevMonth);
   const currentMonthTotals = monthTotals.find((t) => t.year === CURRENT_YEAR && t.month === CURRENT_MONTH);
-  const referenceRevenu = currentMonthTotals?.revenus ?? lastClosed?.revenus ?? 0;
+  const montantAAllouer = currentMonthTotals?.revenus ?? lastClosed?.revenus ?? 0;
+
+  // Catégories cochables : celles de la saisie (fixes, variables, épargne), actives ou non
+  const selectableCategories = useMemo(
+    () => categories.filter((c) => c.group === "fixes" || c.group === "variables" || c.group === "epargne")
+      .sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name)),
+    [categories]
+  );
 
   function startEdit(a: Account) {
     setEditingId(a.id);
     setForm({
-      name: a.name, type: a.type, balance: String(a.balance),
+      name: a.name, balance: String(a.balance),
       allocationPct: a.allocationPct != null ? String(a.allocationPct) : "",
       monthlyBudget: a.monthlyBudget != null ? String(a.monthlyBudget) : "",
+      categoryNames: a.categoryNames ?? [],
     });
     setShowForm(true);
   }
@@ -91,12 +90,19 @@ export default function AccountsClient() {
     setForm(emptyForm);
   }
 
+  function toggleCategory(name: string) {
+    setForm((f) => ({
+      ...f,
+      categoryNames: f.categoryNames.includes(name) ? f.categoryNames.filter((c) => c !== name) : [...f.categoryNames, name],
+    }));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name) return;
     const body = JSON.stringify({
       name: form.name,
-      type: form.type,
+      categoryNames: form.categoryNames,
       balance: form.balance ? Number(form.balance) : 0,
       allocationPct: form.allocationPct ? Number(form.allocationPct) : null,
       monthlyBudget: form.monthlyBudget ? Number(form.monthlyBudget) : null,
@@ -123,21 +129,17 @@ export default function AccountsClient() {
     refetch();
   }
 
-  // Montant suggéré pour un compte selon son rôle : les rôles liés au budget (fixes,
-  // variables, épargne+investissement) se basent sur le dernier mois clos réel — divisé
-  // également si plusieurs comptes partagent le même rôle. "Loisirs & autres" n'a pas de
-  // source calculée : c'est le budget cible que tu définis toi-même (monthlyBudget).
+  // Montant suggéré = somme du dernier mois clos pour les catégories cochées sur ce
+  // compte. Si aucune catégorie n'est cochée, on retombe sur le budget manuel.
   function suggestedAmount(a: Account): number {
-    const sameType = accounts.filter((x) => x.type === a.type);
-    const share = sameType.length > 1 ? sameType.length : 1;
-    if (a.type === "fixes") return (lastClosed?.fixes ?? 0) / share;
-    if (a.type === "variables") return (lastClosed?.variables ?? 0) / share;
-    if (a.type === "epargne_investissement") return (lastClosed?.epargne ?? 0) / share;
-    return a.monthlyBudget ?? 0;
+    if (!a.categoryNames || a.categoryNames.length === 0) return a.monthlyBudget ?? 0;
+    return entries
+      .filter((e) => e.year === prevYear && e.month === prevMonth && a.categoryNames.includes(e.category))
+      .reduce((s, e) => s + e.amount, 0);
   }
 
   function effectiveAmount(a: Account): number {
-    return overrides[a.id] ?? a.monthlyBudget ?? suggestedAmount(a);
+    return overrides[a.id] ?? suggestedAmount(a);
   }
 
   async function handleConfirmRepartition() {
@@ -155,9 +157,17 @@ export default function AccountsClient() {
   }
 
   const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
-  const totalRepartition = accounts.reduce((s, a) => s + effectiveAmount(a), 0);
-  const repartitionEcart = referenceRevenu - totalRepartition;
   const balanceData = accounts.filter((a) => a.balance > 0).map((a) => ({ name: a.name, value: a.balance }));
+
+  // Solde restant après chaque compte, dans l'ordre d'affichage — comme un chéquier
+  let running = montantAAllouer;
+  const repartitionRows = accounts.map((a) => {
+    const amount = effectiveAmount(a);
+    const before = running;
+    running -= amount;
+    return { account: a, amount, before, after: running };
+  });
+  const soldeFinal = running;
 
   if (loading) return <p className="text-gray-500">Chargement...</p>;
 
@@ -173,8 +183,9 @@ export default function AccountsClient() {
           <p className="text-2xl font-semibold">{accounts.length}</p>
         </div>
         <div className="card p-5">
-          <p className="text-sm text-gray-500">Revenu de référence</p>
-          <p className="text-2xl font-semibold"><Money value={referenceRevenu} /></p>
+          <p className="text-sm text-gray-500">Montant à allouer</p>
+          <p className="text-2xl font-semibold"><Money value={montantAAllouer} /></p>
+          <p className="text-xs text-gray-400 mt-1">Revenus du mois précédent</p>
         </div>
       </div>
 
@@ -184,7 +195,7 @@ export default function AccountsClient() {
           <div>
             <h2 className="text-lg font-semibold">Répartition du mois</h2>
             <p className="text-sm text-gray-500">
-              Combien virer vers chaque compte — fixes et variables suggérés d'après {lastClosed ? `${lastClosed.month}/${lastClosed.year}` : "le dernier mois clos"}, à ajuster librement.
+              Montants suggérés d'après les catégories cochées sur chaque compte ({lastClosed ? `${lastClosed.month}/${lastClosed.year}` : "dernier mois clos"}) — ajustables, avec le solde restant après chaque virement.
             </p>
           </div>
           <div className="card overflow-x-auto">
@@ -192,37 +203,41 @@ export default function AccountsClient() {
               <thead>
                 <tr className="border-b border-gray-100 text-left text-gray-500">
                   <th className="px-4 py-2">Compte</th>
-                  <th className="px-4 py-2">Rôle</th>
+                  <th className="px-4 py-2">Catégories couvertes</th>
                   <th className="px-4 py-2 text-right">Montant à virer</th>
+                  <th className="px-4 py-2 text-right">Solde restant</th>
                 </tr>
               </thead>
               <tbody>
-                {accounts.map((a) => (
+                <tr className="bg-[#F5F0E6]/60">
+                  <td className="px-4 py-2 font-medium" colSpan={3}>Montant à allouer</td>
+                  <td className="px-4 py-2 text-right font-medium"><Money value={montantAAllouer} /></td>
+                </tr>
+                {repartitionRows.map(({ account: a, amount, after }) => (
                   <tr key={a.id} className="border-b border-gray-50">
                     <td className="px-4 py-2 font-medium">{a.name}</td>
-                    <td className="px-4 py-2 text-gray-500">{TYPE_LABELS[a.type] ?? a.type}</td>
+                    <td className="px-4 py-2 text-gray-500 text-xs max-w-[220px]">
+                      {a.categoryNames.length > 0 ? a.categoryNames.join(", ") : <span className="italic">budget manuel</span>}
+                    </td>
                     <td className="px-4 py-2 text-right">
                       <input
                         type="number" step="0.01"
-                        value={overrides[a.id] ?? Math.round(effectiveAmount(a))}
+                        value={overrides[a.id] ?? Math.round(amount)}
                         onChange={(e) => setOverrides((o) => ({ ...o, [a.id]: Number(e.target.value) }))}
                         className="border border-gray-300 rounded-lg px-2 py-1 w-28 text-right tabular-nums"
                       />
+                    </td>
+                    <td className={`px-4 py-2 text-right tabular-nums ${after < 0 ? "text-red" : "text-gray-600"}`}>
+                      <Money value={after} />
                     </td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
                 <tr className="font-medium">
-                  <td className="px-4 py-2" colSpan={2}>Total réparti</td>
-                  <td className="px-4 py-2 text-right"><Money value={totalRepartition} /></td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-2 text-gray-500" colSpan={2}>
-                    {Math.abs(repartitionEcart) < 1 ? "Correspond au revenu de référence" : repartitionEcart > 0 ? "Non réparti" : "Dépasse le revenu de référence"}
-                  </td>
-                  <td className={`px-4 py-2 text-right ${Math.abs(repartitionEcart) < 1 ? "text-green" : "text-amber-600"}`}>
-                    <Money value={repartitionEcart} />
+                  <td className="px-4 py-2" colSpan={3}>Solde non affecté</td>
+                  <td className={`px-4 py-2 text-right ${Math.abs(soldeFinal) < 1 ? "text-green" : soldeFinal < 0 ? "text-red" : "text-amber-600"}`}>
+                    <Money value={soldeFinal} />
                   </td>
                 </tr>
               </tfoot>
@@ -243,28 +258,38 @@ export default function AccountsClient() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleSubmit} className="card p-4 flex flex-wrap items-end gap-3">
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Nom</label>
-            <input placeholder="Ex: Compte courant Belfius" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-48" required />
+        <form onSubmit={handleSubmit} className="card p-4 space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Nom</label>
+              <input placeholder="Ex: Compte courant Belfius" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-48" required />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Solde actuel</label>
+              <input type="number" step="0.01" value={form.balance} onChange={(e) => setForm((f) => ({ ...f, balance: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-32 text-right" />
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Budget manuel (si aucune catégorie cochée)</label>
+              <input type="number" step="0.01" placeholder="ex: 200" value={form.monthlyBudget} onChange={(e) => setForm((f) => ({ ...f, monthlyBudget: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-32 text-right" />
+            </div>
+            <button type="submit" className="bg-accent text-white rounded-lg px-4 py-1.5 text-sm font-medium">
+              {editingId ? "Enregistrer" : "Ajouter"}
+            </button>
           </div>
+
           <div>
-            <label className="text-xs text-gray-500 block mb-1">Rôle dans le budget</label>
-            <select value={form.type} onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm">
-              {TYPES.map((t) => <option key={t} value={t}>{TYPE_LABELS[t]}</option>)}
-            </select>
+            <label className="text-xs text-gray-500 block mb-2">Catégories de la saisie qui alimentent ce compte</label>
+            <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-1 max-h-64 overflow-y-auto border border-gray-100 rounded-lg p-3">
+              {selectableCategories.map((c) => (
+                <label key={c.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={form.categoryNames.includes(c.name)} onChange={() => toggleCategory(c.name)} className="accent-[var(--accent)]" />
+                  <span>{c.name}</span>
+                  <span className="text-xs text-gray-400">({GROUP_LABELS[c.group as keyof typeof GROUP_LABELS]})</span>
+                </label>
+              ))}
+              {selectableCategories.length === 0 && <p className="text-sm text-gray-400">Aucune catégorie trouvée — crée-les d'abord dans /input.</p>}
+            </div>
           </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Solde actuel</label>
-            <input type="number" step="0.01" value={form.balance} onChange={(e) => setForm((f) => ({ ...f, balance: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-32 text-right" />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Budget mensuel cible (optionnel)</label>
-            <input type="number" step="0.01" placeholder="ex: 200" value={form.monthlyBudget} onChange={(e) => setForm((f) => ({ ...f, monthlyBudget: e.target.value }))} className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm w-32 text-right" />
-          </div>
-          <button type="submit" className="bg-accent text-white rounded-lg px-4 py-1.5 text-sm font-medium">
-            {editingId ? "Enregistrer" : "Ajouter"}
-          </button>
         </form>
       )}
 
@@ -273,7 +298,7 @@ export default function AccountsClient() {
           <thead>
             <tr className="border-b border-gray-100 text-left text-gray-500">
               <th className="px-4 py-2">Compte</th>
-              <th className="px-4 py-2">Rôle</th>
+              <th className="px-4 py-2">Catégories</th>
               <th className="px-4 py-2 text-right">Solde</th>
               <th className="px-4 py-2"></th>
             </tr>
@@ -282,7 +307,9 @@ export default function AccountsClient() {
             {accounts.map((a) => (
               <tr key={a.id} className="border-b border-gray-50">
                 <td className="px-4 py-2 font-medium">{a.name}</td>
-                <td className="px-4 py-2 text-gray-500">{TYPE_LABELS[a.type] ?? a.type}</td>
+                <td className="px-4 py-2 text-gray-500 text-xs max-w-[240px]">
+                  {a.categoryNames.length > 0 ? a.categoryNames.join(", ") : <span className="italic">budget manuel</span>}
+                </td>
                 <td className="px-4 py-2 text-right">
                   <input
                     type="number" step="0.01" defaultValue={a.balance}

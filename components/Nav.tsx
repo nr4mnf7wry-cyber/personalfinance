@@ -24,11 +24,14 @@ export default function Nav() {
   }, []);
 
   return (
-    <nav className="border-b border-[var(--border)] bg-white">
-      <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-6">
-          <span className="font-semibold">Budget & Patrimoine</span>
-          <div className="flex gap-4">
+    <nav className="bg-white shadow-[0_1px_3px_rgba(18,35,63,0.06)] relative z-10">
+      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-8">
+          <span className="font-semibold flex items-center gap-2 tracking-tight">
+            <span className="w-2 h-2 rounded-full bg-accent inline-block" />
+            Budget & Patrimoine
+          </span>
+          <div className="flex gap-1 h-16 items-stretch">
             {viewLinks.map((l) => {
               const active = l.group ? l.group.some((g) => pathname?.startsWith(g)) : pathname?.startsWith(l.href);
               return (
@@ -36,10 +39,10 @@ export default function Nav() {
                   key={l.href}
                   href={l.href}
                   className={clsx(
-                    "text-sm px-2 py-1 rounded-md",
+                    "text-sm px-1 flex items-center border-b-2 -mb-px transition-colors",
                     active
-                      ? "bg-[#F5F0E6] text-accent font-medium"
-                      : "text-gray-600 hover:text-gray-900"
+                      ? "border-accent text-accent font-medium"
+                      : "border-transparent text-gray-500 hover:text-gray-900"
                   )}
                 >
                   {l.label}
@@ -54,7 +57,7 @@ export default function Nav() {
           <Link
             href="/input"
             className={clsx(
-              "text-sm px-3 py-1.5 rounded-lg border font-medium flex items-center gap-1.5",
+              "text-sm px-3 py-1.5 rounded-lg border font-medium flex items-center gap-1.5 transition-colors",
               onInputPage
                 ? "bg-accent text-white border-accent"
                 : "border-accent text-accent hover:bg-[#F5F0E6]"

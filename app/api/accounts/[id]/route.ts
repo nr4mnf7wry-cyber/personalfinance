@@ -4,11 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
-const ACCOUNT_TYPES = ["fixes", "variables", "epargne_investissement", "loisirs_autres", "autre"] as const;
-
 const schema = z.object({
   name: z.string().min(1).optional(),
-  type: z.enum(ACCOUNT_TYPES).optional(),
+  categoryNames: z.array(z.string()).optional(),
   balance: z.number().optional(),
   allocationPct: z.number().nullable().optional(),
   monthlyBudget: z.number().nullable().optional(),
@@ -35,7 +33,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     where: { id: params.id },
     data: {
       ...(d.name !== undefined ? { name: d.name } : {}),
-      ...(d.type !== undefined ? { type: d.type } : {}),
+      ...(d.categoryNames !== undefined ? { categoryNames: d.categoryNames } : {}),
       ...(d.balance !== undefined ? { balance: d.balance } : {}),
       ...(d.allocationPct !== undefined ? { allocationPct: d.allocationPct } : {}),
       ...(d.monthlyBudget !== undefined ? { monthlyBudget: d.monthlyBudget } : {}),
