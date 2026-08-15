@@ -7,8 +7,10 @@ import clsx from "clsx";
 
 // Pages de consultation (regroupées, style onglet classique)
 const viewLinks = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/investments", label: "Patrimoine", group: ["/investments", "/dettes", "/comptes"] },
+  { href: "/dashboard", label: "Vue d'ensemble" },
+  { href: "/explorer", label: "Explorer" },
+  { href: "/patrimoine", label: "Patrimoine" },
+  { href: "/projeter", label: "Projeter" },
 ];
 
 export default function Nav() {

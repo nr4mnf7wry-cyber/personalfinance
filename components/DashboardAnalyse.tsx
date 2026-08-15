@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  ResponsiveContainer, PieChart, Pie, Cell, Tooltip,
+  ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   LineChart, Line,
 } from "recharts";
@@ -83,6 +83,15 @@ export default function DashboardAnalyse() {
   const monthTotals = useMemo(() => computeMonthTotals(entries, balancesCapped), [entries, balancesCapped]);
   const years = Array.from(new Set(monthTotals.map((t) => t.year))).sort();
   const monthOptions = MONTH_LABELS.filter((_, i) => selYear < CURRENT_YEAR || i + 1 <= CURRENT_MONTH);
+
+  // Comparaisons entre toutes les années connues (déplacé depuis Vue d'ensemble)
+  const annualComparisonData = useMemo(
+    () => years.map((y) => {
+      const t = yearTotals(monthTotals, y);
+      return { year: y, Revenus: t.revenus, Dépenses: t.depenses, Épargne: t.epargne };
+    }),
+    [years, monthTotals]
+  );
 
   // Liste des catégories (dépenses) disponibles pour le filtre — dérivée des entrées
   // réelles, pour inclure celles qui ont depuis été renommées/arrêtées
@@ -480,6 +489,27 @@ export default function DashboardAnalyse() {
             </div>
           </section>
         </>
+      )}
+
+      {/* Comparaisons entre années */}
+      {years.length > 1 && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold">Comparaisons entre années</h2>
+          <div className="card p-4">
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={annualComparisonData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+                <XAxis dataKey="year" />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v: number) => `${v.toFixed(0)} €`} contentStyle={TOOLTIP_STYLE} />
+                <Legend />
+                <Bar dataKey="Revenus" fill={GROUP_COLORS.revenus} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Dépenses" fill={GROUP_COLORS.fixes} radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Épargne" fill={GROUP_COLORS.epargne} radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
       )}
 
       {/* Ratios & indicateurs */}

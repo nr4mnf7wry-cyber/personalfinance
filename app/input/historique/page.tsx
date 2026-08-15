@@ -1,9 +1,9 @@
 import Nav from "@/components/Nav";
 import { BlurProvider, BlurToggleButton } from "@/components/BlurToggle";
 import SaisieTabs from "@/components/SaisieTabs";
-import InputClient from "@/components/InputClient";
+import InputHistorique from "@/components/InputHistorique";
 
-export default function InputPage() {
+export default function InputHistoriquePage() {
   return (
     <BlurProvider>
       <Nav />
@@ -13,7 +13,7 @@ export default function InputPage() {
           <BlurToggleButton />
         </div>
         <SaisieTabs />
-        <InputClient />
+        <InputHistorique />
       </main>
     </BlurProvider>
   );

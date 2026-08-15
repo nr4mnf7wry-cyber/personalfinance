@@ -5,13 +5,11 @@ import { usePathname } from "next/navigation";
 import clsx from "clsx";
 
 const tabs = [
-  { href: "/patrimoine", label: "Ensemble" },
-  { href: "/patrimoine/comptes", label: "Comptes" },
-  { href: "/patrimoine/investissements", label: "Investissements" },
-  { href: "/patrimoine/dettes", label: "Dettes" },
+  { href: "/input", label: "Ce mois-ci" },
+  { href: "/input/historique", label: "Historique" },
 ];
 
-export default function PatrimoineTabs() {
+export default function SaisieTabs() {
   const pathname = usePathname();
   return (
     <div className="flex gap-1 border-b border-[var(--border)] mb-8">

@@ -1,19 +1,19 @@
 import Nav from "@/components/Nav";
 import { BlurProvider, BlurToggleButton } from "@/components/BlurToggle";
-import SaisieTabs from "@/components/SaisieTabs";
-import InputClient from "@/components/InputClient";
+import PatrimoineTabs from "@/components/PatrimoineTabs";
+import DebtsClient from "@/components/DebtsClient";
 
-export default function InputPage() {
+export default function PatrimoineDettesPage() {
   return (
     <BlurProvider>
       <Nav />
       <main className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-2">
-          <h1 className="text-2xl font-semibold">Saisie</h1>
+          <h1 className="text-2xl font-semibold">Patrimoine</h1>
           <BlurToggleButton />
         </div>
-        <SaisieTabs />
-        <InputClient />
+        <PatrimoineTabs />
+        <DebtsClient />
       </main>
     </BlurProvider>
   );

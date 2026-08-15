@@ -1,19 +1,19 @@
 import Nav from "@/components/Nav";
 import { BlurProvider, BlurToggleButton } from "@/components/BlurToggle";
-import SaisieTabs from "@/components/SaisieTabs";
-import InputClient from "@/components/InputClient";
+import ProjeterTabs from "@/components/ProjeterTabs";
+import DashboardSimulator from "@/components/DashboardSimulator";
 
-export default function InputPage() {
+export default function ProjeterSimulateurPage() {
   return (
     <BlurProvider>
       <Nav />
       <main className="max-w-6xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-2">
-          <h1 className="text-2xl font-semibold">Saisie</h1>
+          <h1 className="text-2xl font-semibold">Projeter</h1>
           <BlurToggleButton />
         </div>
-        <SaisieTabs />
-        <InputClient />
+        <ProjeterTabs />
+        <DashboardSimulator />
       </main>
     </BlurProvider>
   );

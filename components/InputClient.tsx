@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { GROUP_LABELS, Group, MONTH_LABELS } from "@/lib/categories";
 import { Money } from "@/components/BlurToggle";
 import ExcelImport from "@/components/ExcelImport";
-import HistoryTable from "@/components/HistoryTable";
 import StatTile from "@/components/StatTile";
 import MonthYearPicker from "@/components/MonthYearPicker";
 
@@ -43,7 +42,6 @@ export default function InputClient() {
   const [investCurrency, setInvestCurrency] = useState("EUR");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [ready, setReady] = useState(false); // true une fois le préremplissage du mois terminé (évite un auto-save prématuré)
-  const [allEntries, setAllEntries] = useState<any[]>([]);
   const [newCatName, setNewCatName] = useState<Record<Group, string>>({ revenus: "", fixes: "", variables: "", epargne: "" });
   const [newCatExpiry, setNewCatExpiry] = useState<Record<Group, string>>({ revenus: "", fixes: "", variables: "", epargne: "" });
   const [stoppingCategoryId, setStoppingCategoryId] = useState<string | null>(null);
@@ -53,41 +51,9 @@ export default function InputClient() {
   function refetchCategories() {
     fetch("/api/categories").then((r) => r.json()).then(setCategories);
   }
-  function refetchAllEntries() {
-    fetch(`/api/entries`).then((r) => r.json()).then(setAllEntries);
-  }
-
-  async function handleHistoryEdit(y: number, m: number, group: string, category: string, amount: number) {
-    // Mise à jour optimiste pour un rendu instantané
-    setAllEntries((prev) => {
-      const idx = prev.findIndex((e) => e.year === y && e.month === m && e.group === group && e.category === category && !e.subCategory);
-      if (idx === -1) return [...prev, { year: y, month: m, group, category, subCategory: "", amount }];
-      const copy = [...prev];
-      copy[idx] = { ...copy[idx], amount };
-      return copy;
-    });
-    await fetch("/api/entries", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ year: y, month: m, lines: [{ group, category, subCategory: null, amount }] }),
-    });
-    // Recharge le formulaire si on vient de modifier le mois actuellement affiché
-    if (y === year && m === month) {
-      fetch(`/api/entries?year=${y}&month=${m}`)
-        .then((r) => r.json())
-        .then((data: any[]) => {
-          const found = data.find((e) => e.category === category && e.group === group && !e.subCategory);
-          if (found) {
-            const cat = categories.find((c) => c.name === category && c.group === group);
-            if (cat) setAmounts((a) => ({ ...a, [cat.id]: found.amount }));
-          }
-        });
-    }
-  }
 
   useEffect(() => {
     refetchCategories();
-    refetchAllEntries();
   }, []);
 
   const activeCategories = useMemo(() => {
@@ -199,7 +165,6 @@ export default function InputClient() {
     ]);
 
     setSaveStatus(entriesRes.ok ? "saved" : "idle");
-    if (entriesRes.ok) refetchAllEntries();
   }
 
   // Auto-sauvegarde : dès qu'un montant, le solde ou les infos d'investissement changent,
@@ -235,7 +200,6 @@ export default function InputClient() {
       body: JSON.stringify({ name: newName.trim() }),
     });
     refetchCategories();
-    refetchAllEntries();
   }
 
   async function handleDeleteCategory(cat: Category) {
@@ -290,49 +254,6 @@ export default function InputClient() {
     refetchCategories();
   }
 
-  async function handleGroupChange(categoryId: string, newGroup: Group) {
-    await fetch(`/api/categories/${categoryId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ group: newGroup }),
-    });
-    refetchCategories();
-    refetchAllEntries();
-  }
-
-  async function handleDeleteRow(group: string, category: string) {
-    await fetch(`/api/entries?group=${encodeURIComponent(group)}&category=${encodeURIComponent(category)}`, {
-      method: "DELETE",
-    });
-    refetchAllEntries();
-  }
-
-  async function handleDeleteAllHistory() {
-    await fetch("/api/entries", { method: "DELETE" });
-    refetchAllEntries();
-  }
-
-  async function handleReorder(categoryId: string, direction: "up" | "down") {
-    const cat = categories.find((c) => c.id === categoryId);
-    if (!cat) return;
-    const sameGroup = categories.filter((c) => c.group === cat.group).sort((a, b) => a.order - b.order);
-    const idx = sameGroup.findIndex((c) => c.id === categoryId);
-    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= sameGroup.length) return;
-    const other = sameGroup[swapIdx];
-    await Promise.all([
-      fetch(`/api/categories/${cat.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order: other.order }),
-      }),
-      fetch(`/api/categories/${other.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order: cat.order }),
-      }),
-    ]);
-    refetchCategories();
-  }
-
   return (
     <div className="space-y-8">
       {/* Barre d'outils */}
@@ -366,7 +287,7 @@ export default function InputClient() {
         </div>
 
         <div className="ml-auto">
-          <ExcelImport onImported={() => { refetchCategories(); refetchAllEntries(); }} />
+          <ExcelImport onImported={() => refetchCategories()} />
         </div>
       </div>
 
@@ -586,19 +507,6 @@ export default function InputClient() {
           ))}
         </div>
       )}
-
-      <div>
-        <h2 className="text-lg font-semibold mb-3">Historique</h2>
-        <HistoryTable
-          entries={allEntries}
-          categories={categories}
-          onEdit={handleHistoryEdit}
-          onGroupChange={handleGroupChange}
-          onDeleteRow={handleDeleteRow}
-          onReorder={handleReorder}
-          onDeleteAll={handleDeleteAllHistory}
-        />
-      </div>
     </div>
   );
 }
