@@ -143,10 +143,16 @@ export default function InputClient() {
             const listed = transactions
               .filter((t) => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() + 1 === m; })
               .reduce((s, t) => s + (t.type === "vente" ? -t.amount : t.amount) * (rates[t.currency] ?? 1), 0);
-            const nonListed = privateInvestments
+            // Création d'un nouvel investissement non coté = argent qui sort du compte (+)
+            const nonListedNew = privateInvestments
               .filter((p) => { const d = new Date(p.startDate); return d.getFullYear() === y && d.getMonth() + 1 === m; })
               .reduce((s, p) => s + p.amountInvested * (rates[p.currency] ?? 1), 0);
-            return listed + nonListed;
+            // Clôture d'un investissement non coté = argent qui REVIENT sur le compte (-),
+            // symétrique à une vente d'action — oublié jusqu'ici, c'était le bug
+            const nonListedClosed = privateInvestments
+              .filter((p) => p.closedAt && (() => { const d = new Date(p.closedAt); return d.getFullYear() === y && d.getMonth() + 1 === m; })())
+              .reduce((s, p) => s - (p.closedAmount ?? 0) * (rates[p.currency] ?? 1), 0);
+            return listed + nonListedNew + nonListedClosed;
           }
 
           setInvestedThisMonth(investedIn(year, month));
@@ -388,6 +394,11 @@ export default function InputClient() {
         const correctedActual = actualDelta + investedThisMonth;
         const ecart = Math.round((correctedActual - expected) * 100) / 100;
         const ok = Math.abs(ecart) < 1;
+        // Si l'écart correspond (à 1€ près) au montant investi ce mois ou le mois
+        // précédent, ma correction s'applique probablement à tort : cet argent n'est
+        // sans doute jamais sorti du compte suivi ici (financé depuis un autre compte).
+        const matchesThisMonth = !ok && investedThisMonth !== 0 && Math.abs(ecart - investedThisMonth) < 1;
+        const matchesPrevMonth = !ok && investedPrevMonth !== 0 && Math.abs(ecart - investedPrevMonth) < 1;
         const prevMonthLabel = MONTH_LABELS[(month === 1 ? 12 : month - 1) - 1];
         return (
           <div className={`card p-4 text-sm ${ok ? "border-green-200" : "border-amber-300"}`}>
@@ -396,7 +407,13 @@ export default function InputClient() {
               Attendu (revenus {prevMonthLabel}{investedPrevMonth !== 0 ? ` moins investi en ${prevMonthLabel}` : ""} − dépenses de ce mois) : <Money value={expected} /> · Constaté (solde fin − solde début{investedThisMonth !== 0 ? " + investi ce mois" : ""}) : <Money value={correctedActual} />
             </p>
             <p className={`mt-1 font-medium ${ok ? "text-green" : "text-amber-600"}`}>
-              {ok ? "✓ Cohérent" : `⚠ Écart de ${ecart > 0 ? "+" : ""}${ecart.toFixed(2)} € — vérifie qu'aucune dépense ou entrée d'argent n'a été oubliée`}
+              {ok
+                ? "✓ Cohérent"
+                : matchesThisMonth
+                ? `⚠ Écart de ${ecart.toFixed(2)} € — pile le montant investi ce mois. Cet argent n'est probablement pas sorti du compte suivi ici (financé depuis un autre compte) : rien à corriger.`
+                : matchesPrevMonth
+                ? `⚠ Écart de ${ecart.toFixed(2)} € — pile le montant investi en ${prevMonthLabel}. Cet argent n'a probablement jamais transité par le compte suivi ici : rien à corriger.`
+                : `⚠ Écart de ${ecart > 0 ? "+" : ""}${ecart.toFixed(2)} € — vérifie qu'aucune dépense ou entrée d'argent n'a été oubliée`}
             </p>
             {(investedThisMonth !== 0 || investedPrevMonth !== 0) && (
               <p className="text-xs text-gray-400 mt-1">
