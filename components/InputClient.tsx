@@ -49,6 +49,7 @@ export default function InputClient() {
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
   const [prevMonthRevenus, setPrevMonthRevenus] = useState(0);
   const [investedThisMonth, setInvestedThisMonth] = useState(0);
+  const [investedPrevMonth, setInvestedPrevMonth] = useState(0);
 
   function refetchCategories() {
     fetch("/api/categories").then((r) => r.json()).then(setCategories);
@@ -117,26 +118,39 @@ export default function InputClient() {
     });
   }, [year, month, categories.length]);
 
-  // Montant net investi en bourse ce mois-ci, pour le contrôle mensuel (l'argent
-  // investi sort du compte sans être une "dépense" au sens propre)
+  // Montant net investi (bourse + non coté) ce mois-ci ET le mois précédent, pour le
+  // contrôle mensuel — de l'argent investi en X-1 n'a jamais rejoint le pot à répartir
+  // pour X, et l'argent investi en X sort du compte de X sans être une "dépense".
   useEffect(() => {
+    const prevYear = month === 1 ? year - 1 : year;
+    const prevMonth = month === 1 ? 12 : month - 1;
+
     Promise.all([
       fetch("/api/investments").then((r) => r.json()),
-    ]).then(([transactions]: [any[]]) => {
-      const monthTx = transactions.filter((t) => {
-        const d = new Date(t.date);
-        return d.getFullYear() === year && d.getMonth() + 1 === month;
-      });
-      const currencies = Array.from(new Set(monthTx.map((t) => t.currency).filter((c) => c && c !== "EUR")));
+      fetch("/api/private-investments").then((r) => r.json()),
+    ]).then(([transactions, privateInvestments]: [any[], any[]]) => {
+      const currencies = Array.from(new Set([
+        ...transactions.map((t) => t.currency),
+        ...privateInvestments.map((p) => p.currency),
+      ].filter((c) => c && c !== "EUR")));
+
       Promise.all(currencies.map((c) => fetch(`/api/exchange-rate?from=${c}&to=EUR`).then((r) => (r.ok ? r.json() : { rate: 1 })).catch(() => ({ rate: 1 }))))
         .then((rateResults) => {
           const rates: Record<string, number> = { EUR: 1 };
           currencies.forEach((c, i) => { rates[c] = rateResults[i]?.rate ?? 1; });
-          const total = monthTx.reduce((s, t) => {
-            const signed = t.type === "vente" ? -t.amount : t.amount;
-            return s + signed * (rates[t.currency] ?? 1);
-          }, 0);
-          setInvestedThisMonth(total);
+
+          function investedIn(y: number, m: number) {
+            const listed = transactions
+              .filter((t) => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() + 1 === m; })
+              .reduce((s, t) => s + (t.type === "vente" ? -t.amount : t.amount) * (rates[t.currency] ?? 1), 0);
+            const nonListed = privateInvestments
+              .filter((p) => { const d = new Date(p.startDate); return d.getFullYear() === y && d.getMonth() + 1 === m; })
+              .reduce((s, p) => s + p.amountInvested * (rates[p.currency] ?? 1), 0);
+            return listed + nonListed;
+          }
+
+          setInvestedThisMonth(investedIn(year, month));
+          setInvestedPrevMonth(investedIn(prevYear, prevMonth));
         });
     });
   }, [year, month]);
@@ -370,21 +384,26 @@ export default function InputClient() {
       {startBalance !== "" && endBalance !== "" && (() => {
         const actualDelta = Number(endBalance) - Number(startBalance);
         const depensesThisMonth = totals.fixes + totals.variables;
-        const expected = prevMonthRevenus - depensesThisMonth;
+        const expected = prevMonthRevenus - investedPrevMonth - depensesThisMonth;
         const correctedActual = actualDelta + investedThisMonth;
         const ecart = Math.round((correctedActual - expected) * 100) / 100;
         const ok = Math.abs(ecart) < 1;
+        const prevMonthLabel = MONTH_LABELS[(month === 1 ? 12 : month - 1) - 1];
         return (
           <div className={`card p-4 text-sm ${ok ? "border-green-200" : "border-amber-300"}`}>
             <p className="font-medium text-ink mb-1">Contrôle mensuel</p>
             <p className="text-gray-500">
-              Attendu (revenus {MONTH_LABELS[(month === 1 ? 12 : month - 1) - 1]} − dépenses de ce mois) : <Money value={expected} /> · Constaté (solde fin − solde début{investedThisMonth !== 0 ? " + investi ce mois" : ""}) : <Money value={correctedActual} />
+              Attendu (revenus {prevMonthLabel}{investedPrevMonth !== 0 ? ` moins investi en ${prevMonthLabel}` : ""} − dépenses de ce mois) : <Money value={expected} /> · Constaté (solde fin − solde début{investedThisMonth !== 0 ? " + investi ce mois" : ""}) : <Money value={correctedActual} />
             </p>
             <p className={`mt-1 font-medium ${ok ? "text-green" : "text-amber-600"}`}>
               {ok ? "✓ Cohérent" : `⚠ Écart de ${ecart > 0 ? "+" : ""}${ecart.toFixed(2)} € — vérifie qu'aucune dépense ou entrée d'argent n'a été oubliée`}
             </p>
-            {investedThisMonth !== 0 && (
-              <p className="text-xs text-gray-400 mt-1">dont <Money value={investedThisMonth} /> investi en bourse ce mois-ci</p>
+            {(investedThisMonth !== 0 || investedPrevMonth !== 0) && (
+              <p className="text-xs text-gray-400 mt-1">
+                {investedPrevMonth !== 0 && <>investi en {prevMonthLabel} (jamais redistribué pour ce mois) : <Money value={investedPrevMonth} /></>}
+                {investedThisMonth !== 0 && investedPrevMonth !== 0 && " · "}
+                {investedThisMonth !== 0 && <>investi ce mois-ci (bourse + non coté) : <Money value={investedThisMonth} /></>}
+              </p>
             )}
           </div>
         );
