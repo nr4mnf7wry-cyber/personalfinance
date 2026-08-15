@@ -380,34 +380,44 @@ export default function InputClient() {
           ce qui a été investi ce mois-ci (une sortie du compte au même titre qu'une
           dépense). Le constaté reste donc le solde brut, sans aucune correction. */}
       {startBalance !== "" && endBalance !== "" && (() => {
-        const actualDelta = Number(endBalance) - Number(startBalance);
         const depensesThisMonth = totals.fixes + totals.variables;
-        const expected = prevMonthRevenus - depensesThisMonth - investedThisMonth;
-        const ecart = Math.round((actualDelta - expected) * 100) / 100;
+        const expectedEndBalance = Number(startBalance) + prevMonthRevenus - depensesThisMonth - investedThisMonth;
+        const ecart = Math.round((Number(endBalance) - expectedEndBalance) * 100) / 100;
         const ok = Math.abs(ecart) < 1;
-        // Si l'écart correspond (à 1€ près) au montant investi ce mois, la soustraction
-        // s'applique probablement à tort : cet argent n'est sans doute jamais sorti du
-        // compte suivi ici (financé depuis un autre compte).
         const matchesThisMonth = !ok && investedThisMonth !== 0 && Math.abs(ecart - investedThisMonth) < 1;
         const prevMonthLabel = MONTH_LABELS[(month === 1 ? 12 : month - 1) - 1];
+        const rows = [
+          { label: "Solde en début de mois (saisi)", value: Number(startBalance) },
+          { label: `+ Revenus de ${prevMonthLabel}`, value: prevMonthRevenus },
+          { label: "− Dépenses de ce mois (fixes + variables)", value: -depensesThisMonth },
+          ...(investedThisMonth !== 0 ? [{ label: "− Investi ce mois-ci (bourse + non coté)", value: -investedThisMonth }] : []),
+        ];
         return (
           <div className={`card p-4 text-sm ${ok ? "border-green-200" : "border-amber-300"}`}>
-            <p className="font-medium text-ink mb-1">Contrôle mensuel</p>
-            <p className="text-gray-500">
-              Attendu (revenus {prevMonthLabel} − dépenses de ce mois{investedThisMonth !== 0 ? " − investi ce mois" : ""}) : <Money value={expected} /> · Constaté (solde fin − solde début) : <Money value={actualDelta} />
-            </p>
-            <p className={`mt-1 font-medium ${ok ? "text-green" : "text-amber-600"}`}>
+            <p className="font-medium text-ink mb-2">Contrôle mensuel — vérifie chaque chiffre saisi</p>
+            <div className="space-y-1">
+              {rows.map((r, i) => (
+                <div key={i} className="flex justify-between text-gray-600">
+                  <span>{r.label}</span>
+                  <span className="tabular-nums"><Money value={r.value} /></span>
+                </div>
+              ))}
+              <div className="flex justify-between font-medium text-ink border-t border-gray-100 pt-1 mt-1">
+                <span>= Solde de fin de mois attendu</span>
+                <span className="tabular-nums"><Money value={expectedEndBalance} /></span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Solde de fin de mois saisi</span>
+                <span className="tabular-nums"><Money value={Number(endBalance)} /></span>
+              </div>
+            </div>
+            <p className={`mt-2 font-medium ${ok ? "text-green" : "text-amber-600"}`}>
               {ok
-                ? "✓ Cohérent"
+                ? "✓ Le solde saisi correspond à l'attendu"
                 : matchesThisMonth
-                ? `⚠ Écart de ${ecart.toFixed(2)} € — pile le montant investi ce mois. Cet argent n'est probablement pas sorti du compte suivi ici (financé depuis un autre compte) : rien à corriger.`
-                : `⚠ Écart de ${ecart > 0 ? "+" : ""}${ecart.toFixed(2)} € — vérifie qu'aucune dépense ou entrée d'argent n'a été oubliée`}
+                ? `⚠ Écart de ${ecart.toFixed(2)} € — pile le montant investi ce mois. Si cet argent ne vient pas du compte suivi ici, l'écart est normal, rien à corriger.`
+                : `⚠ Écart de ${ecart > 0 ? "+" : ""}${ecart.toFixed(2)} € entre le solde de fin attendu et celui saisi — vérifie un par un les chiffres ci-dessus (solde début/fin, revenus du mois précédent, dépenses de ce mois)`}
             </p>
-            {investedThisMonth !== 0 && (
-              <p className="text-xs text-gray-400 mt-1">
-                investi ce mois-ci (bourse + non coté) : <Money value={investedThisMonth} />
-              </p>
-            )}
           </div>
         );
       })()}
