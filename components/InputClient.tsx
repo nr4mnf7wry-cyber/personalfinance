@@ -319,32 +319,34 @@ export default function InputClient() {
     <div className="space-y-8">
       {/* Barre d'outils */}
       <div className="card p-4 flex flex-wrap items-center gap-4">
-        <MonthYearPicker
-          year={year}
-          month={month}
-          onChange={(y, m) => { setYear(y); setMonth(m); }}
-        />
+        <div className="flex flex-wrap items-center gap-4 pr-4 border-r border-gray-100">
+          <MonthYearPicker
+            year={year}
+            month={month}
+            onChange={(y, m) => { setYear(y); setMonth(m); }}
+          />
 
-        {/* Segmented control condensé/détaillé */}
-        <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
-          <button
-            onClick={() => setDetailed(false)}
-            className={`px-3 py-1.5 ${!detailed ? "bg-accent text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
-          >
-            Condensé
-          </button>
-          <button
-            onClick={() => setDetailed(true)}
-            className={`px-3 py-1.5 border-l border-gray-300 ${detailed ? "bg-accent text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
-          >
-            Détaillé
-          </button>
-        </div>
+          {/* Segmented control condensé/détaillé */}
+          <div className="inline-flex rounded-lg border border-gray-300 overflow-hidden text-sm">
+            <button
+              onClick={() => setDetailed(false)}
+              className={`px-3 py-1.5 ${!detailed ? "bg-accent text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+            >
+              Condensé
+            </button>
+            <button
+              onClick={() => setDetailed(true)}
+              className={`px-3 py-1.5 border-l border-gray-300 ${detailed ? "bg-accent text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+            >
+              Détaillé
+            </button>
+          </div>
 
-        {/* Badge de sauvegarde, toujours visible */}
-        <div className="text-sm flex items-center gap-1.5">
-          {saveStatus === "saving" && <span className="text-gray-400">Enregistrement...</span>}
-          {saveStatus === "saved" && <span className="text-green flex items-center gap-1">● à jour</span>}
+          {/* Badge de sauvegarde, toujours visible */}
+          <div className="text-sm flex items-center gap-1.5">
+            {saveStatus === "saving" && <span className="text-gray-400">Enregistrement...</span>}
+            {saveStatus === "saved" && <span className="text-green flex items-center gap-1">● à jour</span>}
+          </div>
         </div>
 
         <div className="ml-auto">
@@ -356,23 +358,29 @@ export default function InputClient() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="card p-4">
           <label className="text-sm text-gray-500 block mb-1">Solde en début de mois</label>
-          <input
-            type="number" step="0.01"
-            value={startBalance}
-            onChange={(e) => setStartBalance(e.target.value === "" ? "" : Number(e.target.value))}
-            className="text-lg font-semibold w-full border-none p-0 focus:outline-none tabular-nums"
-            placeholder="—"
-          />
+          <div className="flex items-baseline gap-1">
+            <input
+              type="number" step="0.01"
+              value={startBalance}
+              onChange={(e) => setStartBalance(e.target.value === "" ? "" : Number(e.target.value))}
+              className="no-spinner text-lg font-semibold w-full border-none p-0 focus:outline-none tabular-nums placeholder:text-gray-300 placeholder:font-normal"
+              placeholder="0,00"
+            />
+            <span className="text-sm text-gray-400 shrink-0">€</span>
+          </div>
         </div>
         <div className="card p-4">
           <label className="text-sm text-gray-500 block mb-1">Solde en fin de mois</label>
-          <input
-            type="number" step="0.01"
-            value={endBalance}
-            onChange={(e) => setEndBalance(e.target.value === "" ? "" : Number(e.target.value))}
-            className="text-lg font-semibold w-full border-none p-0 focus:outline-none tabular-nums"
-            placeholder="—"
-          />
+          <div className="flex items-baseline gap-1">
+            <input
+              type="number" step="0.01"
+              value={endBalance}
+              onChange={(e) => setEndBalance(e.target.value === "" ? "" : Number(e.target.value))}
+              className="no-spinner text-lg font-semibold w-full border-none p-0 focus:outline-none tabular-nums placeholder:text-gray-300 placeholder:font-normal"
+              placeholder="0,00"
+            />
+            <span className="text-sm text-gray-400 shrink-0">€</span>
+          </div>
         </div>
         {adjustmentCategory && (
           <div className="card p-4 md:col-span-2 flex items-center">
@@ -483,7 +491,7 @@ export default function InputClient() {
 
               <div>
                 {activeCategories.filter((c) => c.group === g).map((c) => (
-                  <div key={c.id} className="relative px-5 py-2.5 flex items-center gap-3 border-t border-gray-50 first:border-t-0 hover:bg-gray-50/60">
+                  <div key={c.id} className="relative px-5 py-2 flex items-center gap-3 border-t border-gray-50 first:border-t-0 hover:bg-gray-50/60">
                     <div className="flex items-center gap-1.5 shrink-0 max-w-[45%]">
                       <input
                         defaultValue={c.name}
@@ -527,7 +535,7 @@ export default function InputClient() {
 
                     <button
                       onClick={() => setMenuOpenId(menuOpenId === c.id ? null : c.id)}
-                      className="text-gray-300 hover:text-gray-600 w-5 text-center shrink-0"
+                      className="text-gray-400 hover:text-ink hover:bg-gray-100 rounded w-6 h-6 text-center shrink-0 transition-colors"
                       title="Actions"
                     >
                       ⋯
