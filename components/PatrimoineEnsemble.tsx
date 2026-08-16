@@ -27,16 +27,6 @@ export default function PatrimoineEnsemble() {
     () => computeWealthEvolution(balancesCapped, transactions, rates),
     [balancesCapped, transactions, rates]
   );
-  const wealthDelta = useMemo(() => {
-    if (wealthSeries.length < 2) return { total: null, invested: null };
-    const cur = wealthSeries[wealthSeries.length - 1];
-    const prev = wealthSeries[wealthSeries.length - 2];
-    return {
-      total: prev.total ? ((cur.total - prev.total) / Math.abs(prev.total)) * 100 : null,
-      invested: prev.invested ? ((cur.invested - prev.invested) / Math.abs(prev.invested)) * 100 : null,
-    };
-  }, [wealthSeries]);
-
   const cashflowSeries = useMemo(
     () => monthTotals.map((t) => ({
       label: `${MONTH_LABELS[t.month - 1].slice(0, 3)} ${t.year}`,
@@ -60,8 +50,8 @@ export default function PatrimoineEnsemble() {
   return (
     <div className="space-y-8">
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatTile label="Patrimoine net" value={totalWealth} delta={wealthDelta.total} />
-        <StatTile label="Portefeuille (montant investi net)" value={portfolioValue} delta={wealthDelta.invested} />
+        <StatTile label="Patrimoine net" value={totalWealth} />
+        <StatTile label="Portefeuille (montant investi net)" value={portfolioValue} />
         <StatTile label="Liquidités" value={liquidBalance ?? 0} />
       </div>
       {totalDebtRemaining > 0 && (

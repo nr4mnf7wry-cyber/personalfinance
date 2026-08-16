@@ -10,7 +10,6 @@ const schema = z.object({
   expiresAt: z.string().nullable().optional(),
   isInvestment: z.boolean().optional(),
   isAdjustment: z.boolean().optional(),
-  isEssential: z.boolean().nullable().optional(),
   parentGroup: z.string().nullable().optional(),
   order: z.number().optional(),
 });
@@ -42,7 +41,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
         ...(d.expiresAt !== undefined ? { expiresAt: d.expiresAt ? new Date(d.expiresAt) : null } : {}),
         ...(d.isInvestment !== undefined ? { isInvestment: d.isInvestment } : {}),
         ...(d.isAdjustment !== undefined ? { isAdjustment: d.isAdjustment } : {}),
-        ...(d.isEssential !== undefined ? { isEssential: d.isEssential } : {}),
         ...(d.parentGroup !== undefined ? { parentGroup: d.parentGroup?.trim() || null } : {}),
         ...(d.order !== undefined ? { order: d.order } : {}),
       },

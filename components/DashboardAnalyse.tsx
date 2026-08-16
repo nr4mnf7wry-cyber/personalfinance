@@ -29,7 +29,6 @@ const RATIO_DEFS: { key: keyof ReturnType<typeof computeRatios>; label: string; 
   { key: "variableToIncome", label: "Variable Expenses / Income", isPct: true, higherIsBetter: false },
   { key: "investmentRate", label: "Investment Rate", isPct: true, higherIsBetter: true },
   { key: "housingRatio", label: "Housing Ratio", isPct: true, higherIsBetter: false },
-  { key: "discretionaryExpenses", label: "Dépenses discrétionnaires", isPct: false, higherIsBetter: false },
   { key: "avgMonthlyIncome", label: "Revenu moyen mensuel", isPct: false, higherIsBetter: true },
   { key: "avgSavings", label: "Épargne moyenne", isPct: false, higherIsBetter: true },
   { key: "avgCostOfLiving", label: "Coût moyen de la vie", isPct: false, higherIsBetter: false },
@@ -123,8 +122,6 @@ export default function DashboardAnalyse() {
   const prevM = !isWholeYear ? (selMonth === 1 ? 12 : (selMonth as number) - 1) : undefined;
   const prevY = !isWholeYear ? (selMonth === 1 ? selYear - 1 : selYear) : undefined;
   const previous = !isWholeYear ? monthTotals.find((t) => t.year === prevY && t.month === prevM) : undefined;
-  const revenusDelta = previous && previous.revenus ? ((current?.revenus ?? 0) - previous.revenus) / previous.revenus * 100 : null;
-  const depensesDelta = previous && previous.depenses ? ((current?.depenses ?? 0) - previous.depenses) / previous.depenses * 100 : null;
 
   const donutData = useMemo(() => {
     if (isWholeYear) return [];
@@ -226,22 +223,54 @@ export default function DashboardAnalyse() {
     return Array.from(byCategory.entries()).map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
   }, [entries, selParentGroup, categoriesInParentGroup, selYear, selMonth, isWholeYear]);
 
-  // Ratios sur l'année sélectionnée
+  // Ratios sur la période sélectionnée — réagit au filtre mois, pas seulement à l'année
+  // (sinon ces indicateurs restent figés sur l'année entière même quand on choisit un
+  // mois précis, ce qui n'apporte rien de plus qu'une simple constante par an)
+  const periodMonthTotals = useMemo(
+    () => (isWholeYear ? yearMonths : (current ? [current] : [])),
+    [isWholeYear, yearMonths, current]
+  );
+  const periodEntries = useMemo(
+    () => isWholeYear
+      ? entries.filter((e) => e.year === selYear)
+      : entries.filter((e) => e.year === selYear && e.month === selMonth),
+    [entries, selYear, selMonth, isWholeYear]
+  );
   const ratios = useMemo(() => {
-    const yearTransactions = transactions.filter((t: any) => new Date(t.date).getFullYear() === selYear);
-    return computeRatios(yearMonths, entries.filter((e) => e.year === selYear), categories, yearTransactions, rates);
-  }, [yearMonths, entries, selYear, categories, transactions, rates]);
-  const prevYearMonthsForRatios = useMemo(() => monthTotals.filter((t) => t.year === selYear - 1), [monthTotals, selYear]);
+    const periodTransactions = transactions.filter((t: any) => {
+      const d = new Date(t.date);
+      return isWholeYear ? d.getFullYear() === selYear : (d.getFullYear() === selYear && d.getMonth() + 1 === selMonth);
+    });
+    return computeRatios(periodMonthTotals, periodEntries, categories, periodTransactions, rates);
+  }, [periodMonthTotals, periodEntries, selYear, selMonth, isWholeYear, categories, transactions, rates]);
+
+  // Comparaison : même mois l'année dernière si un mois est sélectionné, sinon année
+  // dernière entière — toujours une comparaison à période égale
+  const prevPeriodMonthTotals = useMemo(
+    () => isWholeYear
+      ? monthTotals.filter((t) => t.year === selYear - 1)
+      : (() => { const p = monthTotals.find((t) => t.year === selYear - 1 && t.month === selMonth); return p ? [p] : []; })(),
+    [monthTotals, selYear, selMonth, isWholeYear]
+  );
   const prevYearRatios = useMemo(() => {
-    if (prevYearMonthsForRatios.length === 0) return null;
-    const prevYearTransactions = transactions.filter((t: any) => new Date(t.date).getFullYear() === selYear - 1);
-    return computeRatios(prevYearMonthsForRatios, entries.filter((e) => e.year === selYear - 1), categories, prevYearTransactions, rates);
-  }, [prevYearMonthsForRatios, entries, selYear, categories, transactions, rates]);
+    if (prevPeriodMonthTotals.length === 0) return null;
+    const prevEntries = isWholeYear
+      ? entries.filter((e) => e.year === selYear - 1)
+      : entries.filter((e) => e.year === selYear - 1 && e.month === selMonth);
+    const prevTransactions = transactions.filter((t: any) => {
+      const d = new Date(t.date);
+      return isWholeYear ? d.getFullYear() === selYear - 1 : (d.getFullYear() === selYear - 1 && d.getMonth() + 1 === selMonth);
+    });
+    return computeRatios(prevPeriodMonthTotals, prevEntries, categories, prevTransactions, rates);
+  }, [prevPeriodMonthTotals, entries, selYear, selMonth, isWholeYear, categories, transactions, rates]);
 
   const incomeAllocation = useMemo(() => {
-    const yearTransactions = transactions.filter((t: any) => new Date(t.date).getFullYear() === selYear);
-    return computeIncomeAllocation(yearMonths, yearTransactions, rates);
-  }, [yearMonths, selYear, transactions, rates]);
+    const periodTransactions = transactions.filter((t: any) => {
+      const d = new Date(t.date);
+      return isWholeYear ? d.getFullYear() === selYear : (d.getFullYear() === selYear && d.getMonth() + 1 === selMonth);
+    });
+    return computeIncomeAllocation(periodMonthTotals, periodTransactions, rates);
+  }, [periodMonthTotals, selYear, selMonth, isWholeYear, transactions, rates]);
 
   if (loading) return <p className="text-gray-500">Chargement...</p>;
   if (entries.length === 0) {
@@ -375,8 +404,8 @@ export default function DashboardAnalyse() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatTile label="Solde net du mois" value={current?.net ?? 0} />
             <StatTile label="Taux d'épargne" value={current?.savingsRate ?? 0} isCurrency={false} />
-            <StatTile label="Revenus" value={current?.revenus ?? 0} delta={revenusDelta} />
-            <StatTile label="Dépenses" value={current?.depenses ?? 0} delta={depensesDelta} higherIsBetter={false} />
+            <StatTile label="Revenus" value={current?.revenus ?? 0} />
+            <StatTile label="Dépenses" value={current?.depenses ?? 0} />
           </div>
 
           <section className="space-y-4">
@@ -514,7 +543,7 @@ export default function DashboardAnalyse() {
 
       {/* Ratios & indicateurs */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">Ratios & indicateurs — {selYear}</h2>
+        <h2 className="text-lg font-semibold">Ratios & indicateurs — {isWholeYear ? selYear : `${MONTH_LABELS[(selMonth as number) - 1]} ${selYear}`}</h2>
 
         {/* Où va chaque euro de revenu — somme toujours à 100% */}
         <div className="card p-5 space-y-3">
@@ -567,7 +596,7 @@ export default function DashboardAnalyse() {
                 </p>
                 {delta != null && Math.abs(delta) > 0.05 && (
                   <p className={`text-xs mt-1 ${deltaFavorable ? "text-green" : "text-red"}`}>
-                    {delta >= 0 ? "↑" : "↓"} {r.isPct ? `${Math.abs(delta).toFixed(1)} pt` : <Money value={Math.abs(delta)} />} vs {selYear - 1}
+                    {delta >= 0 ? "↑" : "↓"} {r.isPct ? `${Math.abs(delta).toFixed(1)} pt` : <Money value={Math.abs(delta)} />} vs {isWholeYear ? selYear - 1 : `${MONTH_LABELS[(selMonth as number) - 1]} ${selYear - 1}`}
                   </p>
                 )}
               </div>

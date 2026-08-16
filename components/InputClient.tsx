@@ -14,7 +14,6 @@ type Category = {
   expiresAt: string | null;
   isInvestment: boolean;
   isAdjustment: boolean;
-  isEssential: boolean | null;
   parentGroup: string | null;
   order: number;
   defaultAmount: number | null;
@@ -284,15 +283,6 @@ export default function InputClient() {
     refetchCategories();
   }
 
-  async function handleSetEssential(cat: Category, value: boolean | null) {
-    await fetch(`/api/categories/${cat.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isEssential: value }),
-    });
-    refetchCategories();
-  }
-
   async function handleSetParentGroup(cat: Category, value: string) {
     await fetch(`/api/categories/${cat.id}`, {
       method: "PATCH",
@@ -558,22 +548,6 @@ export default function InputClient() {
                           >
                             Catégorie d'ajustement auto {c.isAdjustment && <span className="text-accent">✓</span>}
                           </button>
-                        )}
-                        {(g === "fixes" || g === "variables") && (
-                          <>
-                            <button
-                              onClick={() => { handleSetEssential(c, c.isEssential === true ? null : true); setMenuOpenId(null); }}
-                              className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
-                            >
-                              Dépense essentielle {c.isEssential === true && <span className="text-accent">✓</span>}
-                            </button>
-                            <button
-                              onClick={() => { handleSetEssential(c, c.isEssential === false ? null : false); setMenuOpenId(null); }}
-                              className="w-full text-left px-4 py-2 hover:bg-gray-50 flex items-center justify-between"
-                            >
-                              Dépense discrétionnaire {c.isEssential === false && <span className="text-accent">✓</span>}
-                            </button>
-                          </>
                         )}
                         <div className="px-4 py-2 border-t border-gray-100">
                           <label className="text-xs text-gray-400 block mb-1">Regroupement (ex: "Car" pour Carfuel, Carinsurance...)</label>

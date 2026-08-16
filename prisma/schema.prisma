@@ -100,12 +100,6 @@ model Category {
   // (solde début + revenus - dépenses - solde fin), plutôt que saisi manuellement
   isAdjustment Boolean @default(false)
 
-  // Pour les dépenses (fixes/variables) : essentiel (loyer, nourriture...) vs
-  // discrétionnaire (sorties, shopping...) — alimente le ratio "Dépenses
-  // discrétionnaires" avec une vraie distinction plutôt qu'un raccourci sur le groupe.
-  // null = non classé (compté comme discrétionnaire par défaut, à ajuster soi-même).
-  isEssential  Boolean?
-
   // Regroupement personnalisé (ex: "Carfuel" et "Carinsurance" peuvent tous deux
   // appartenir au regroupement "Car") — utilisé pour des analyses par famille de
   // dépenses plus large que la catégorie elle-même. Optionnel, libre.

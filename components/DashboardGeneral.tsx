@@ -33,15 +33,6 @@ export default function DashboardGeneral() {
   const prevYear = CURRENT_MONTH === 1 ? CURRENT_YEAR - 1 : CURRENT_YEAR;
   const lastClosed = monthTotals.find((t) => t.year === prevYear && t.month === prevMonth);
 
-  const beforeLastClosedMonth = prevMonth === 1 ? 12 : prevMonth - 1;
-  const beforeLastClosedYear = prevMonth === 1 ? prevYear - 1 : prevYear;
-  const beforeLastClosed = monthTotals.find((t) => t.year === beforeLastClosedYear && t.month === beforeLastClosedMonth);
-
-  function pctDelta(cur: number | undefined, prev: number | undefined): number | null {
-    if (cur === undefined || prev === undefined || !prev) return null;
-    return ((cur - prev) / prev) * 100;
-  }
-
   const donutData = useMemo(() => {
     const rows = entries.filter((e) => e.year === prevYear && e.month === prevMonth && (e.group === "fixes" || e.group === "variables"));
     return rows.map((r) => ({ name: r.category, value: r.amount }));
@@ -91,8 +82,8 @@ export default function DashboardGeneral() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatTile label="Patrimoine total" value={totalWealth} />
         <StatTile label={`Revenus — ${MONTH_LABELS[CURRENT_MONTH - 1].slice(0, 3)}`} value={currentMonthTotals?.revenus ?? 0} />
-        <StatTile label={`Dépenses — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.depenses ?? 0} delta={pctDelta(lastClosed?.depenses, beforeLastClosed?.depenses)} higherIsBetter={false} />
-        <StatTile label={`Taux d'épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.savingsRate ?? 0} isCurrency={false} delta={pctDelta(lastClosed?.savingsRate, beforeLastClosed?.savingsRate)} />
+        <StatTile label={`Dépenses — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.depenses ?? 0} />
+        <StatTile label={`Taux d'épargne — ${MONTH_LABELS[prevMonth - 1].slice(0, 3)}`} value={lastClosed?.savingsRate ?? 0} isCurrency={false} />
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
